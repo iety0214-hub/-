@@ -1,0 +1,917 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>契約・金消完了報告作成ツール</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: linear-gradient(135deg, #FFD700 0%, #000000 100%);
+            min-height: 100vh;
+            padding: 20px;
+        }
+
+        .container {
+            max-width: 700px;
+            margin: 0 auto;
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+            overflow: hidden;
+        }
+
+        .header {
+            background: linear-gradient(135deg, #FFD700 0%, #000000 100%);
+            color: white;
+            padding: 30px;
+            text-align: center;
+        }
+
+        .header h1 {
+            font-size: 28px;
+            margin-bottom: 8px;
+        }
+
+        .header p {
+            opacity: 0.9;
+            font-size: 14px;
+        }
+
+        .form-section {
+            padding: 30px;
+        }
+
+        .form-group {
+            margin-bottom: 20px;
+        }
+
+        label {
+            display: block;
+            font-weight: 600;
+            margin-bottom: 8px;
+            color: #333;
+            font-size: 14px;
+        }
+
+        select, input, textarea {
+            width: 100%;
+            padding: 12px 16px;
+            border: 2px solid #e0e0e0;
+            border-radius: 8px;
+            font-size: 14px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+
+        select:focus, input:focus, textarea:focus {
+            outline: none;
+            border-color: #FFD700;
+            box-shadow: 0 0 0 3px rgba(255, 215, 0, 0.1);
+        }
+
+        .required::after {
+            content: " *";
+            color: #ef4444;
+        }
+
+        .button-group {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
+            margin-top: 30px;
+        }
+
+        button {
+            padding: 14px 24px;
+            border: none;
+            border-radius: 8px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+
+        .btn-generate {
+            background: linear-gradient(135deg, #FFD700 0%, #FFA500 100%);
+            color: #000;
+        }
+
+        .btn-generate:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(255, 215, 0, 0.4);
+        }
+
+        .btn-copy {
+            background: #10b981;
+            color: white;
+        }
+
+        .btn-copy:hover {
+            background: #059669;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(16, 185, 129, 0.4);
+        }
+
+        .btn-gmail {
+            background: #EA4335;
+            color: white;
+        }
+
+        .btn-gmail:hover {
+            background: #d33426;
+            transform: translateY(-2px);
+            box-shadow: 0 8px 20px rgba(234, 67, 53, 0.4);
+        }
+
+        .preview-section {
+            background: #f8f9fa;
+            padding: 30px;
+            border-top: 2px solid #e0e0e0;
+            display: none;
+        }
+
+        .preview-section.active {
+            display: block;
+        }
+
+        .preview-box {
+            background: white;
+            padding: 24px;
+            border-radius: 8px;
+            border: 2px solid #e0e0e0;
+            white-space: pre-wrap;
+            font-family: -apple-system, BlinkMacSystemFont, "Helvetica Neue", "Hiragino Sans", "Hiragino Kaku Gothic ProN", "Yu Gothic UI", "Meiryo UI", sans-serif;
+            font-size: 14px;
+            line-height: 1.8;
+            max-height: 500px;
+            overflow-y: auto;
+            font-weight: 600;
+            color: #000;
+        }
+
+        .toast {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #10b981;
+            color: white;
+            padding: 16px 24px;
+            border-radius: 8px;
+            box-shadow: 0 8px 20px rgba(0, 0, 0, 0.3);
+            display: none;
+            animation: slideIn 0.3s ease;
+            z-index: 1000;
+        }
+
+        .toast.active {
+            display: block;
+        }
+
+        @keyframes slideIn {
+            from {
+                transform: translateX(400px);
+                opacity: 0;
+            }
+            to {
+                transform: translateX(0);
+                opacity: 1;
+            }
+        }
+
+        .info-text {
+            font-size: 12px;
+            color: #666;
+            margin-top: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>📧 契約・金消完了報告メール</h1>
+            <p>項目を入力してGmail報告メールを生成</p>
+        </div>
+
+        <div class="form-section">
+            <div class="form-group">
+                <label class="required">送信先</label>
+                <input type="text" id="sendTo" value="axia-japan@googlegroups.com" readonly style="background: #f0f0f0;">
+            </div>
+
+            <div class="form-group">
+                <label class="required">種別</label>
+                <select id="reportType">
+                    <option value="">選択してください</option>
+                    <option value="事前承認">事前承認</option>
+                    <option value="本承認">本承認</option>
+                    <option value="申込">申込</option>
+                    <option value="契約">契約</option>
+                    <option value="電話面談">電話面談</option>
+                    <option value="金消">金消</option>
+                    <option value="物件振替">物件振替</option>
+                    <option value="物件確定">物件確定</option>
+                    <option value="オープン">オープン</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="required">区分</label>
+                <select id="category">
+                    <option value="">選択してください</option>
+                    <option value="新規">新規</option>
+                    <option value="買増">買増</option>
+                    <option value="他社増し">他社増し</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label class="required">顧客名</label>
+                <input type="text" id="customerName" placeholder="例：田口 航太様">
+                <div class="info-text">「様」は自動で追加されます</div>
+            </div>
+
+            <div class="form-group" id="beforePropertyGroup" style="display: none;">
+                <label class="required">振替前物件名</label>
+                <select id="beforePropertyName">
+                    <option value="">選択してください</option>
+                    <option value="未定">未定</option>
+                    <option value="ライジングプレイス綾瀬">ライジングプレイス綾瀬</option>
+                    <option value="プレサンスジェネ千種内山2">プレサンスジェネ千種内山2</option>
+                    <option value="MAXIV代田橋">MAXIV代田橋</option>
+                    <option value="AXIA City 大阪淡路">AXIA City 大阪淡路</option>
+                    <option value="デュオステージ調布国領MAXIV">デュオステージ調布国領MAXIV</option>
+                    <option value="AXIA M-City大阪加賀屋">AXIA M-City大阪加賀屋</option>
+                    <option value="MAXIV板橋本町">MAXIV板橋本町</option>
+                    <option value="ラナップスクエア新福島">ラナップスクエア新福島</option>
+                    <option value="プレール・ドゥーク田園調布南">プレール・ドゥーク田園調布南</option>
+                    <option value="MAXIV百合ヶ丘">MAXIV百合ヶ丘</option>
+                    <option value="MAXIV新栄">MAXIV新栄</option>
+                    <option value="その他">その他（手入力）</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="customBeforePropertyGroup" style="display: none;">
+                <label>振替前物件名（手入力）</label>
+                <input type="text" id="customBeforeProperty" placeholder="物件名を入力してください">
+            </div>
+
+            <div class="form-group" id="beforeRoomGroup" style="display: none;">
+                <label>振替前号室</label>
+                <input type="text" id="beforeRoomNumber" placeholder="例：203号室">
+            </div>
+
+            <div class="form-group">
+                <label class="required">物件名</label>
+                <select id="propertyName">
+                    <option value="">選択してください</option>
+                    <option value="未定">未定</option>
+                    <option value="ライジングプレイス綾瀬">ライジングプレイス綾瀬</option>
+                    <option value="プレサンスジェネ千種内山2">プレサンスジェネ千種内山2</option>
+                    <option value="MAXIV代田橋">MAXIV代田橋</option>
+                    <option value="AXIA City 大阪淡路">AXIA City 大阪淡路</option>
+                    <option value="デュオステージ調布国領MAXIV">デュオステージ調布国領MAXIV</option>
+                    <option value="AXIA M-City大阪加賀屋">AXIA M-City大阪加賀屋</option>
+                    <option value="MAXIV板橋本町">MAXIV板橋本町</option>
+                    <option value="ラナップスクエア新福島">ラナップスクエア新福島</option>
+                    <option value="プレール・ドゥーク田園調布南">プレール・ドゥーク田園調布南</option>
+                    <option value="MAXIV百合ヶ丘">MAXIV百合ヶ丘</option>
+                    <option value="MAXIV新栄">MAXIV新栄</option>
+                    <option value="その他">その他（手入力）</option>
+                    <option value="新規追加">➕ 新規物件を追加</option>
+                </select>
+                <div class="info-text">「新規物件を追加」でリストに永久保存できます</div>
+            </div>
+
+            <div class="form-group" id="customPropertyGroup" style="display: none;">
+                <label>物件名（手入力）</label>
+                <input type="text" id="customProperty" placeholder="物件名を入力してください">
+            </div>
+
+            <div class="form-group" id="addPropertyGroup" style="display: none;">
+                <label>新規物件名を追加</label>
+                <input type="text" id="newProperty" placeholder="物件名を入力してください">
+                <button type="button" id="btnAddProperty" style="margin-top: 8px; background: #FFD700; color: #000; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600;">リストに追加</button>
+            </div>
+
+            <div class="form-group">
+                <label>号室</label>
+                <input type="text" id="roomNumber" placeholder="例：203号室">
+            </div>
+
+            <div class="form-group">
+                <label class="required">銀行</label>
+                <select id="bank">
+                    <option value="">選択してください</option>
+                    <option value="未定">未定</option>
+                    <option value="楽天銀行">楽天銀行</option>
+                    <option value="SBJ銀行">SBJ銀行</option>
+                    <option value="イオン銀行">イオン銀行</option>
+                    <option value="SBI新生銀行">SBI新生銀行</option>
+                    <option value="その他">その他（手入力）</option>
+                </select>
+            </div>
+
+            <div class="form-group" id="customBankGroup" style="display: none;">
+                <label>銀行名（手入力）</label>
+                <input type="text" id="customBank" placeholder="銀行名を入力してください">
+            </div>
+
+            <div class="form-group">
+                <label>契約</label>
+                <input type="date" id="contractDate">
+            </div>
+
+            <div class="form-group">
+                <label>決済予定</label>
+                <input type="date" id="settlementDate">
+            </div>
+
+            <div class="form-group">
+                <label class="required">担当</label>
+                <select id="personInCharge">
+                    <option value="">選択してください</option>
+                    <option value="茂木社長">茂木社長</option>
+                    <option value="井上常務">井上常務</option>
+                    <option value="土屋次長">土屋次長</option>
+                    <option value="笠原部長">笠原部長</option>
+                    <option value="家原部長">家原部長</option>
+                    <option value="伊藤係長">伊藤係長</option>
+                    <option value="川合部長">川合部長</option>
+                    <option value="安部課長">安部課長</option>
+                    <option value="髙野係長">髙野係長</option>
+                    <option value="大内社員">大内社員</option>
+                    <option value="浅見社員">浅見社員</option>
+                    <option value="佐野係長">佐野係長</option>
+                    <option value="坪井社員">坪井社員</option>
+                    <option value="桃井社員">桃井社員</option>
+                    <option value="五十嵐社員">五十嵐社員</option>
+                    <option value="三浦社員">三浦社員</option>
+                    <option value="脇田社員">脇田社員</option>
+                    <option value="儀間主任">儀間主任</option>
+                    <option value="内田社員">内田社員</option>
+                    <option value="瓜田社員">瓜田社員</option>
+                    <option value="柴田社員">柴田社員</option>
+                    <option value="木村社員">木村社員</option>
+                    <option value="後藤社員">後藤社員</option>
+                </select>
+                <button type="button" id="btnEditStaff" style="margin-top: 8px; background: #667eea; color: white; padding: 8px 16px; border: none; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 13px;">役職を編集</button>
+            </div>
+
+            <div class="form-group">
+                <label>同行</label>
+                <select id="accompany">
+                    <option value="">選択してください</option>
+                    <option value="茂木社長">茂木社長</option>
+                    <option value="井上常務">井上常務</option>
+                    <option value="土屋次長">土屋次長</option>
+                    <option value="笠原部長">笠原部長</option>
+                    <option value="家原部長">家原部長</option>
+                    <option value="伊藤係長">伊藤係長</option>
+                    <option value="川合部長">川合部長</option>
+                    <option value="安部課長">安部課長</option>
+                    <option value="髙野係長">髙野係長</option>
+                    <option value="大内社員">大内社員</option>
+                    <option value="浅見社員">浅見社員</option>
+                    <option value="佐野係長">佐野係長</option>
+                    <option value="坪井社員">坪井社員</option>
+                    <option value="桃井社員">桃井社員</option>
+                    <option value="五十嵐社員">五十嵐社員</option>
+                    <option value="三浦社員">三浦社員</option>
+                    <option value="脇田社員">脇田社員</option>
+                    <option value="儀間主任">儀間主任</option>
+                    <option value="内田社員">内田社員</option>
+                    <option value="瓜田社員">瓜田社員</option>
+                    <option value="柴田社員">柴田社員</option>
+                    <option value="木村社員">木村社員</option>
+                    <option value="後藤社員">後藤社員</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>所属</label>
+                <select id="department">
+                    <option value="">選択してください</option>
+                    <option value="茂木社長">茂木社長</option>
+                    <option value="井上常務">井上常務</option>
+                    <option value="土屋次長">土屋次長</option>
+                    <option value="笠原部長">笠原部長</option>
+                    <option value="家原部長">家原部長</option>
+                    <option value="伊藤係長">伊藤係長</option>
+                    <option value="川合部長">川合部長</option>
+                    <option value="安部課長">安部課長</option>
+                    <option value="髙野係長">髙野係長</option>
+                    <option value="大内社員">大内社員</option>
+                    <option value="浅見社員">浅見社員</option>
+                    <option value="佐野係長">佐野係長</option>
+                    <option value="坪井社員">坪井社員</option>
+                    <option value="桃井社員">桃井社員</option>
+                    <option value="五十嵐社員">五十嵐社員</option>
+                    <option value="三浦社員">三浦社員</option>
+                    <option value="脇田社員">脇田社員</option>
+                    <option value="儀間主任">儀間主任</option>
+                    <option value="内田社員">内田社員</option>
+                    <option value="瓜田社員">瓜田社員</option>
+                    <option value="柴田社員">柴田社員</option>
+                    <option value="木村社員">木村社員</option>
+                    <option value="後藤社員">後藤社員</option>
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label>備考</label>
+                <textarea id="remarks" rows="3" placeholder="例：2物件同時、決済日変更予定など" style="width: 100%; padding: 12px 16px; border: 2px solid #e0e0e0; border-radius: 8px; font-size: 14px; font-family: inherit; resize: vertical;"></textarea>
+                <div class="info-text">複数物件同時などのメモを記入できます</div>
+            </div>
+
+            <div class="button-group">
+                <button class="btn-generate" type="button" id="btnGenerate">生成</button>
+                <button class="btn-copy" type="button" id="btnCopy">コピー</button>
+                <button class="btn-gmail" type="button" id="btnGmail">Gmail送信</button>
+            </div>
+
+            <!-- 件名プレビュー（非表示・JavaScript用） -->
+            <input type="hidden" id="subjectPreview">
+        </div>
+
+        <div class="preview-section" id="previewSection">
+            <h3 style="margin-bottom: 15px; color: #333;">📋 プレビュー</h3>
+            <div class="preview-box" id="previewBox"></div>
+        </div>
+    </div>
+
+    <div class="toast" id="toast">コピーしました！</div>
+
+    <script>
+        // 件名自動更新
+        function updateSubject() {
+            const reportType = document.getElementById('reportType').value;
+            const propertyName = document.getElementById('propertyName').value;
+            const customProperty = document.getElementById('customProperty').value.trim();
+            const subjectPreview = document.getElementById('subjectPreview');
+            
+            if (!reportType) {
+                subjectPreview.value = '';
+                return;
+            }
+            
+            let finalProperty = '';
+            if (propertyName === 'その他' && customProperty) {
+                finalProperty = customProperty;
+            } else if (propertyName && propertyName !== 'その他' && propertyName !== '新規追加') {
+                finalProperty = propertyName;
+            }
+            
+            let subject = '【' + reportType + '】';
+            if (finalProperty) {
+                subject += finalProperty;
+            }
+            
+            subjectPreview.value = subject;
+        }
+
+        // イベントリスナー設定
+        document.getElementById('reportType').addEventListener('change', function() {
+            updateSubject();
+            toggleBeforePropertyField();
+        });
+        document.getElementById('category').addEventListener('change', updateSubject);
+
+        // 振替前物件名フィールドの表示/非表示切り替え
+        function toggleBeforePropertyField() {
+            const reportType = document.getElementById('reportType').value;
+            const beforePropertyGroup = document.getElementById('beforePropertyGroup');
+            const customBeforePropertyGroup = document.getElementById('customBeforePropertyGroup');
+            const beforeRoomGroup = document.getElementById('beforeRoomGroup');
+            
+            if (reportType === '物件振替') {
+                beforePropertyGroup.style.display = 'block';
+                beforeRoomGroup.style.display = 'block';
+            } else {
+                beforePropertyGroup.style.display = 'none';
+                customBeforePropertyGroup.style.display = 'none';
+                beforeRoomGroup.style.display = 'none';
+                document.getElementById('beforePropertyName').value = '';
+                document.getElementById('customBeforeProperty').value = '';
+                document.getElementById('beforeRoomNumber').value = '';
+            }
+        }
+
+        // 振替前物件名のその他選択時の処理
+        document.getElementById('beforePropertyName').addEventListener('change', function() {
+            const customBeforePropertyGroup = document.getElementById('customBeforePropertyGroup');
+            
+            if (this.value === 'その他') {
+                customBeforePropertyGroup.style.display = 'block';
+            } else {
+                customBeforePropertyGroup.style.display = 'none';
+                document.getElementById('customBeforeProperty').value = '';
+            }
+        });
+        
+        document.getElementById('propertyName').addEventListener('change', function() {
+            const customGroup = document.getElementById('customPropertyGroup');
+            const addGroup = document.getElementById('addPropertyGroup');
+            
+            if (this.value === 'その他') {
+                customGroup.style.display = 'block';
+                addGroup.style.display = 'none';
+            } else if (this.value === '新規追加') {
+                customGroup.style.display = 'none';
+                addGroup.style.display = 'block';
+            } else {
+                customGroup.style.display = 'none';
+                addGroup.style.display = 'none';
+                document.getElementById('customProperty').value = '';
+                document.getElementById('newProperty').value = '';
+            }
+            updateSubject();
+        });
+
+        // 新規物件追加ボタン
+        document.getElementById('btnAddProperty').addEventListener('click', function() {
+            const newPropertyName = document.getElementById('newProperty').value.trim();
+            
+            if (!newPropertyName) {
+                alert('物件名を入力してください');
+                return;
+            }
+            
+            // ドロップダウンに追加
+            const select = document.getElementById('propertyName');
+            const newOption = document.createElement('option');
+            newOption.value = newPropertyName;
+            newOption.textContent = newPropertyName;
+            
+            // 「その他」の前に挿入
+            const otherOption = select.querySelector('option[value="その他"]');
+            select.insertBefore(newOption, otherOption);
+            
+            // 追加した物件を選択状態にする
+            select.value = newPropertyName;
+            
+            // localStorageに保存
+            savePropertyToStorage(newPropertyName);
+            
+            // 入力欄を隠す
+            document.getElementById('addPropertyGroup').style.display = 'none';
+            document.getElementById('newProperty').value = '';
+            
+            // 件名更新
+            updateSubject();
+            
+            showToast('物件「' + newPropertyName + '」をリストに追加しました', 'success');
+        });
+
+        // localStorageに物件名を保存
+        function savePropertyToStorage(propertyName) {
+            let savedProperties = localStorage.getItem('customProperties');
+            let propertiesArray = savedProperties ? JSON.parse(savedProperties) : [];
+            
+            if (!propertiesArray.includes(propertyName)) {
+                propertiesArray.push(propertyName);
+                localStorage.setItem('customProperties', JSON.stringify(propertiesArray));
+            }
+        }
+
+        // ページ読み込み時にlocalStorageから物件名を復元
+        function loadPropertiesFromStorage() {
+            let savedProperties = localStorage.getItem('customProperties');
+            if (!savedProperties) return;
+            
+            let propertiesArray = JSON.parse(savedProperties);
+            const select = document.getElementById('propertyName');
+            const otherOption = select.querySelector('option[value="その他"]');
+            
+            propertiesArray.forEach(function(propertyName) {
+                const newOption = document.createElement('option');
+                newOption.value = propertyName;
+                newOption.textContent = propertyName;
+                select.insertBefore(newOption, otherOption);
+            });
+        }
+
+        // ページ読み込み時に実行
+        loadPropertiesFromStorage();
+
+        // 役職編集ボタン
+        document.getElementById('btnEditStaff').addEventListener('click', function() {
+            const currentList = [
+                '茂木社長', '井上常務', '土屋次長', '笠原部長', '家原部長', 
+                '伊藤係長', '川合部長', '安部課長', '髙野係長', '大内社員',
+                '浅見社員', '佐野係長', '坪井社員', '桃井社員', '五十嵐社員',
+                '三浦社員', '脇田社員', '儀間主任', '内田社員', '瓜田社員',
+                '柴田社員', '木村社員', '後藤社員'
+            ];
+            
+            const newList = prompt('社員名簿を編集してください（カンマ区切り）\n\n例：茂木社長,井上常務,土屋次長', currentList.join(','));
+            
+            if (newList !== null && newList.trim() !== '') {
+                const staffArray = newList.split(',').map(function(s) { return s.trim(); }).filter(function(s) { return s !== ''; });
+                
+                if (staffArray.length === 0) {
+                    alert('最低1名は登録してください');
+                    return;
+                }
+                
+                // 全ドロップダウンを更新
+                updateStaffDropdowns(staffArray);
+                
+                // localStorageに保存
+                localStorage.setItem('staffList', JSON.stringify(staffArray));
+                
+                showToast('社員名簿を更新しました', 'success');
+            }
+        });
+
+        // 社員ドロップダウンを更新する関数
+        function updateStaffDropdowns(staffArray) {
+            const selects = ['personInCharge', 'accompany', 'department'];
+            
+            selects.forEach(function(selectId) {
+                const select = document.getElementById(selectId);
+                const currentValue = select.value;
+                
+                // オプションをクリア（「選択してください」以外）
+                while (select.options.length > 1) {
+                    select.remove(1);
+                }
+                
+                // 新しいオプションを追加
+                staffArray.forEach(function(staff) {
+                    const option = document.createElement('option');
+                    option.value = staff;
+                    option.textContent = staff;
+                    select.appendChild(option);
+                });
+                
+                // 以前の選択を復元（存在する場合）
+                if (staffArray.indexOf(currentValue) !== -1) {
+                    select.value = currentValue;
+                }
+            });
+        }
+
+        // ページ読み込み時に保存された社員リストを復元
+        function loadStaffFromStorage() {
+            const savedStaff = localStorage.getItem('staffList');
+            if (savedStaff) {
+                try {
+                    const staffArray = JSON.parse(savedStaff);
+                    updateStaffDropdowns(staffArray);
+                } catch (e) {
+                    console.error('社員リスト読み込みエラー:', e);
+                }
+            }
+        }
+
+        // ページ読み込み時に実行
+        loadStaffFromStorage();
+
+        document.getElementById('customProperty').addEventListener('input', updateSubject);
+
+        document.getElementById('bank').addEventListener('change', function() {
+            const customGroup = document.getElementById('customBankGroup');
+            if (this.value === 'その他') {
+                customGroup.style.display = 'block';
+            } else {
+                customGroup.style.display = 'none';
+                document.getElementById('customBank').value = '';
+            }
+        });
+
+        // 生成ボタン
+        document.getElementById('btnGenerate').addEventListener('click', function() {
+            const reportType = document.getElementById('reportType').value;
+            const category = document.getElementById('category').value;
+            const customerName = document.getElementById('customerName').value.trim();
+            const beforePropertyName = document.getElementById('beforePropertyName').value;
+            const customBeforeProperty = document.getElementById('customBeforeProperty').value.trim();
+            const beforeRoomNumber = document.getElementById('beforeRoomNumber').value.trim();
+            const propertyName = document.getElementById('propertyName').value;
+            const customProperty = document.getElementById('customProperty').value.trim();
+            const roomNumber = document.getElementById('roomNumber').value.trim();
+            const bank = document.getElementById('bank').value;
+            const customBank = document.getElementById('customBank').value.trim();
+            const contractDate = document.getElementById('contractDate').value;
+            const settlementDate = document.getElementById('settlementDate').value;
+            const personInCharge = document.getElementById('personInCharge').value;
+            const accompany = document.getElementById('accompany').value;
+            const department = document.getElementById('department').value;
+            const remarks = document.getElementById('remarks').value.trim();
+            const subject = document.getElementById('subjectPreview').value;
+
+            // 必須チェック
+            if (!reportType) {
+                alert('種別を選択してください');
+                return;
+            }
+            if (!category) {
+                alert('区分を選択してください');
+                return;
+            }
+            if (!customerName) {
+                alert('顧客名を入力してください');
+                return;
+            }
+            
+            // 物件振替の場合は振替前物件名もチェック
+            if (reportType === '物件振替') {
+                if (!beforePropertyName || beforePropertyName === '新規追加') {
+                    alert('振替前物件名を選択してください');
+                    return;
+                }
+                if (beforePropertyName === 'その他' && !customBeforeProperty) {
+                    alert('振替前物件名を入力してください');
+                    return;
+                }
+            }
+            
+            if (!propertyName || propertyName === '新規追加') {
+                alert('物件名を選択してください');
+                return;
+            }
+            if (propertyName === 'その他' && !customProperty) {
+                alert('物件名を入力してください');
+                return;
+            }
+            if (!bank) {
+                alert('銀行を選択してください');
+                return;
+            }
+            if (bank === 'その他' && !customBank) {
+                alert('銀行名を入力してください');
+                return;
+            }
+            if (!personInCharge) {
+                alert('担当を選択してください');
+                return;
+            }
+
+            // 値の確定
+            const finalBeforePropertyName = beforePropertyName === 'その他' ? customBeforeProperty : beforePropertyName;
+            const finalPropertyName = propertyName === 'その他' ? customProperty : propertyName;
+            const finalBank = bank === 'その他' ? customBank : bank;
+            const finalCustomerName = customerName.endsWith('様') ? customerName : customerName + '様';
+
+            // 日付フォーマット（月・日・曜日のみ）
+            let formattedContractDate = '';
+            if (contractDate) {
+                const date = new Date(contractDate);
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+                const weekday = weekdays[date.getDay()];
+                formattedContractDate = month + '月' + day + '日（' + weekday + '）';
+            }
+
+            let formattedSettlementDate = '';
+            if (settlementDate) {
+                const date = new Date(settlementDate);
+                const month = date.getMonth() + 1;
+                const day = date.getDate();
+                const weekdays = ['日', '月', '火', '水', '木', '金', '土'];
+                const weekday = weekdays[date.getDay()];
+                formattedSettlementDate = month + '月' + day + '日（' + weekday + '）';
+            }
+
+            // メール本文生成（シンプル版）
+            let report = '【種別】' + reportType + '\n';
+            report += '【区分】' + category + '\n';
+            report += '【顧客名】' + finalCustomerName + '\n';
+            
+            // 物件振替の場合は振替前を追加（物件名 + 号室）
+            if (reportType === '物件振替' && finalBeforePropertyName) {
+                let beforeInfo = finalBeforePropertyName;
+                if (beforeRoomNumber) {
+                    beforeInfo += ' ' + beforeRoomNumber;
+                }
+                report += '【振替前】' + beforeInfo + '\n';
+            }
+            
+            report += '【物件名】' + finalPropertyName + '\n';
+            report += '【号室】' + (roomNumber || '－') + '\n';
+            report += '【銀行】' + finalBank + '\n';
+            report += '【契約】' + (formattedContractDate || '－') + '\n';
+            report += '【決済予定】' + (formattedSettlementDate || '－') + '\n';
+            report += '【担当】' + (personInCharge || '－') + '\n';
+            report += '【同行】' + (accompany || '－') + '\n';
+            report += '【所属】' + (department || '－');
+            
+            // 備考欄がある場合のみ追加
+            if (remarks) {
+                report += '\n【備考】' + remarks;
+            }
+
+            document.getElementById('previewBox').textContent = report;
+            document.getElementById('previewSection').classList.add('active');
+            document.getElementById('previewSection').scrollIntoView({ behavior: 'smooth' });
+        });
+
+        // コピーボタン
+        document.getElementById('btnCopy').addEventListener('click', function() {
+            const previewBox = document.getElementById('previewBox');
+            const text = previewBox.textContent;
+            
+            if (!text || text.trim() === '') {
+                alert('先に「生成」ボタンを押してください');
+                return;
+            }
+            
+            // テキストエリアを使った確実なコピー方法
+            const textarea = document.createElement('textarea');
+            textarea.value = text;
+            textarea.style.position = 'fixed';
+            textarea.style.top = '0';
+            textarea.style.left = '0';
+            textarea.style.width = '2em';
+            textarea.style.height = '2em';
+            textarea.style.padding = '0';
+            textarea.style.border = 'none';
+            textarea.style.outline = 'none';
+            textarea.style.boxShadow = 'none';
+            textarea.style.background = 'transparent';
+            document.body.appendChild(textarea);
+            textarea.focus();
+            textarea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    showToast('コピーしました！', 'success');
+                } else {
+                    showToast('コピーに失敗しました。プレビューを長押ししてコピーしてください。', 'error');
+                }
+            } catch (err) {
+                console.error('コピーエラー:', err);
+                showToast('コピーに失敗しました。プレビューを長押ししてコピーしてください。', 'error');
+            }
+            
+            document.body.removeChild(textarea);
+        });
+
+        function showToast(message, type) {
+            const toast = document.getElementById('toast');
+            toast.textContent = message;
+            
+            if (type === 'error') {
+                toast.style.background = '#ef4444';
+            } else {
+                toast.style.background = '#10b981';
+            }
+            
+            toast.classList.add('active');
+            setTimeout(function() {
+                toast.classList.remove('active');
+            }, 3000);
+        }
+
+        // Gmail送信ボタン
+        document.getElementById('btnGmail').addEventListener('click', function() {
+            const previewBox = document.getElementById('previewBox');
+            const emailBody = previewBox.textContent;
+            const subject = document.getElementById('subjectPreview').value;
+            
+            // メール生成チェック
+            if (!emailBody || emailBody.trim() === '') {
+                alert('先に「生成」ボタンを押してください');
+                return;
+            }
+            
+            // 件名チェック
+            if (!subject || subject.trim() === '') {
+                alert('件名が生成されていません');
+                return;
+            }
+            
+            // スマホ判定
+            const isMobile = /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
+            
+            if (isMobile) {
+                // スマホ：Gmail起動のみ（本文は手動コピー）
+                const encodedSubject = encodeURIComponent(subject);
+                const encodedTo = encodeURIComponent('axia-japan@googlegroups.com');
+                const mailtoLink = 'mailto:' + encodedTo + '?subject=' + encodedSubject;
+                window.location.href = mailtoLink;
+                
+                // メッセージ表示
+                showToast('プレビューの本文を長押しコピー→Gmail貼り付け', 'success');
+            } else {
+                // PC：ブラウザでGmail開く（宛先・件名・本文すべて自動入力）
+                const encodedSubject = encodeURIComponent(subject);
+                const encodedBody = encodeURIComponent(emailBody);
+                const gmailUrl = 'https://mail.google.com/mail/?view=cm&fs=1&to=axia-japan@googlegroups.com&su=' + encodedSubject + '&body=' + encodedBody;
+                window.open(gmailUrl, '_blank');
+                
+                showToast('Gmailを開きました。送信ボタンを押すだけ！', 'success');
+            }
+        });
+    </script>
+</body>
+</html>
