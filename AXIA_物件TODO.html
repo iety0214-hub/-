@@ -1,0 +1,354 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<title>AXIA JAPAN｜物件TODOリスト</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
+:root{--navy:#0d1b2a;--navy2:#1a2e45;--gold:#e8b84b;--gold2:#f5d07a;--white:#f8f5ef;--gray:#8a9bb0;--green:#2ecc7a;--red:#ff5757;--warn:#ffb347;--card-bg:#152236;--border:rgba(232,184,75,0.18);--font:'Noto Sans JP',sans-serif;--mono:'DM Mono',monospace;}
+html,body,#root{min-height:100vh;background:var(--navy);color:var(--white);font-family:var(--font)}
+body{padding-bottom:90px}
+button{font-family:var(--font);cursor:pointer}
+input,textarea{font-family:var(--font)}
+::-webkit-scrollbar{display:none}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const { useState, useCallback, useMemo, useRef, useEffect } = React;
+
+const STORAGE_KEY = 'axia_react_v1';
+const TABS = [
+  {key:'rakuten',label:'🏦 楽天'},
+  {key:'sbj',label:'🏛 SBJ'},
+  {key:'jisha_rakuten',label:'🏢 自社楽天'},
+  {key:'jisha_sbj',label:'🏗 自社SBJ'},
+];
+const SECTIONS = [
+  {label:'■ 契約＆重説',keys:['keiyaku_sakusei','keiyaku_eigyo','gmo_send','gmo_cert']},
+  {label:'📝 書士書類',keys:['toroki','shorui_umu','seikyu','kinshoki_share','eigyo_to','eigyo_from','suikama']},
+  {label:'🔥 火災保険',keys:['hoken_iraishita','hoken_juryou','hoken_eigyo']},
+  {label:'🏗 建管書類',keys:['tatekam_soroi','tatekam_eigyo']},
+];
+const SBJ_KEYS = ['sbj_honin','sbj_dansin','sbj_approval'];
+const LABELS = {
+  keiyaku_sakusei:'作成完了',keiyaku_eigyo:'営業へ渡した',
+  gmo_send:'GMO送信',gmo_cert:'GMO証明完了',toroki:'登記依頼',
+  shorui_umu:'書士書類 有無確認',seikyu:'請求書提出',kinshoki_share:'金消日 共有',
+  eigyo_to:'営業へ渡した',eigyo_from:'営業から受領',suikama:'洲鎌に郵送',
+  hoken_iraishita:'火災保険 依頼済み',hoken_juryou:'火災保険 書類受領',hoken_eigyo:'火災保険 営業へ渡した',
+  tatekam_soroi:'建管書類 揃っているか',tatekam_eigyo:'営業へ渡した',
+  sbj_honin:'本人確認 完了',sbj_dansin:'団信申込 完了',sbj_approval:'承認登録 完了',
+};
+const DC = {keiyaku_sakusei:false,keiyaku_eigyo:false,gmo_send:false,gmo_cert:false,toroki:false,shorui_umu:false,seikyu:false,kinshoki_share:false,eigyo_to:false,eigyo_from:false,suikama:false,hoken_iraishita:false,hoken_juryou:false,hoken_eigyo:false,tatekam_soroi:false,tatekam_eigyo:false};
+
+const INIT = [
+  {id:'p01',name:'ライジングプレイス川崎609',tab:'sbj',date:'4/28',buyer:'原田 海斗',kinshoki:'4/22(火) 13:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
+  {id:'p02',name:'MAXIV新川崎502',tab:'rakuten',date:'4/28',buyer:'石川 彰真',kinshoki:'4/19(土) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
+  {id:'p03',name:'MAXIV西大島610',tab:'rakuten',date:'4/28',buyer:'石川 彰真',kinshoki:'4/19(土) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
+  {id:'p04',name:'アゼスト富士見町208',tab:'rakuten',date:'4/28',buyer:'橋田 直樹',kinshoki:'4/20(日) 14:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
+  {id:'p05',name:'ベルシード志村坂上',tab:'rakuten',date:'4/28',buyer:'岡田 学人',kinshoki:'4/20(日) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,gmo_cert:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
+  {id:'p06',name:'セジョリ押上イースト610',tab:'rakuten',date:'4/28',buyer:'久壽米木 直人',kinshoki:'4/13(日) 18:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
+  {id:'p07',name:'ステージファーストつつじヶ丘903',tab:'rakuten',date:'4/28',buyer:'山端 詩',kinshoki:'4/21(月) 19:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
+  {id:'p08',name:'スパシエ横浜大通り公園1002',tab:'rakuten',date:'4/28',buyer:'岩方 千紘',kinshoki:'4/18(土) 10:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true}},
+  {id:'p09',name:'エステムコート大阪シティサイト502',tab:'sbj',date:'4/28',buyer:'鈴木 周',kinshoki:'4/9(木) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true,tatekam_soroi:true}},
+  {id:'p10',name:'AXIACITY大阪淡路401',tab:'jisha_rakuten',date:'4/30',buyer:'村井 嶺太',kinshoki:'4/21(月) 19:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
+  {id:'p11',name:'AXIACITY大阪淡路201',tab:'jisha_rakuten',date:'4/30',buyer:'佐藤 将',kinshoki:'4/18(金) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
+  {id:'p12',name:'AXIACITY大阪淡路102',tab:'jisha_rakuten',date:'4/30',buyer:'田口 航太',kinshoki:'4/12(土) 15:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,suikama:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true,tatekam_soroi:true}},
+  {id:'p13',name:'AXIACITY大阪淡路302',tab:'jisha_rakuten',date:'4/30',buyer:'山本 啓太',kinshoki:'4/18(土) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
+  {id:'p14',name:'AXIACITY大阪淡路303',tab:'jisha_rakuten',date:'4/30',buyer:'蓜島 玲矢',kinshoki:'4/25(土) 11:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
+  {id:'p15',name:'ヴェルト新宿夏目坂1002',tab:'rakuten',date:'4/28',buyer:'藤崎 真',kinshoki:'4/2',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,suikama:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
+  {id:'p16',name:'シティインデックス新宿若松町702',tab:'rakuten',date:'4/28',buyer:'川逑 佳史',kinshoki:'4/19(土) 10:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true}},
+  {id:'p17',name:'AXIACITY大阪淡路204',tab:'jisha_rakuten',date:'4/28',buyer:'千葉 陽樹',kinshoki:'4/20(月) 19:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:'warn',eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
+  {id:'p18',name:'MAXIV新栄306',tab:'sbj',date:'4/28',buyer:'平野 和幸',kinshoki:'4/24(金) 12:30',sbjVisible:false,warnMemos:{},checks:{...DC}},
+  {id:'p19',name:'MAXIV新栄1405',tab:'sbj',date:'4/28',buyer:'市位 潤也',kinshoki:'4/24(金) 12:30',sbjVisible:false,warnMemos:{},checks:{...DC}},
+  {id:'p20',name:'MAXIV新栄203',tab:'sbj',date:'4/28',buyer:'吉村 海',kinshoki:'4/24(月) 18:15',sbjVisible:false,warnMemos:{},checks:{...DC}},
+  {id:'p21',name:'ラナップスクエア新福島604',tab:'sbj',date:'4/28',buyer:'小林 健人',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
+  {id:'p22',name:'AXIACITY大阪淡路404',tab:'jisha_rakuten',date:'4/28',buyer:'内海 和政',kinshoki:'4/20(月) 19:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
+  {id:'p23',name:'AC加賀屋602',tab:'rakuten',date:'',buyer:'髙江 渉',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC}},
+  {id:'p24',name:'プレサンス城北公園アクアージュ602',tab:'rakuten',date:'',buyer:'',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC}},
+];
+
+function load(){try{const s=localStorage.getItem(STORAGE_KEY);if(s)return JSON.parse(s);}catch(e){}return INIT.map(p=>({...p}));}
+function persist(ps){localStorage.setItem(STORAGE_KEY,JSON.stringify(ps));}
+function getAllKeys(){return[...SECTIONS.flatMap(s=>s.keys),...SBJ_KEYS];}
+function calc(checks,sbjVisible=false){
+  const keys=[...SECTIONS.flatMap(s=>s.keys),...(sbjVisible?SBJ_KEYS:[])];
+  const done=keys.filter(k=>(checks[k]??false)===true).length;
+  const total=keys.length;
+  const hasWarn=keys.some(k=>(checks[k]??false)==='warn');
+  return{done,total,hasWarn};
+}
+
+function Ring({done,total}){
+  const sz=44,r=sz/2-5,c=2*Math.PI*r,pct=total>0?done/total:0,d=c*pct;
+  const col=pct===1?'#2ecc7a':pct>.6?'#e8b84b':pct>0?'#ff9f43':'#ff5757';
+  return(<svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{transform:'rotate(-90deg)'}}>
+    <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="4"/>
+    <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={col} strokeWidth="4" strokeDasharray={`${d} ${c}`} strokeLinecap="round"/>
+    <text x={sz/2} y={sz/2+5} textAnchor="middle" fill={col} fontSize="11" fontFamily="DM Mono,monospace" fontWeight="700"
+      style={{transform:`rotate(90deg)`,transformOrigin:`${sz/2}px ${sz/2}px`}}>{done}/{total}</text>
+  </svg>);
+}
+
+function CheckItem({id,ck,val,memo,onToggle,onMemo}){
+  const done=val===true,warn=val==='warn';
+  const next=val===false?true:val===true?'warn':false;
+  const icon=warn?'⚠️':done?'✅':'❌';
+  const bg=warn?'rgba(255,179,71,.12)':done?'rgba(46,204,122,.12)':'rgba(255,87,87,.12)';
+  const bc=warn?'#ffb347':done?'#2ecc7a':'#ff5757';
+  return(<div>
+    <div onClick={()=>onToggle(id,ck,next)} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',borderBottom:'1px solid rgba(255,255,255,.04)',cursor:'pointer',borderRadius:8}}>
+      <div style={{flexShrink:0,width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:bg,border:`2px solid ${bc}`}}>{icon}</div>
+      <div style={{flex:1,fontSize:13,fontWeight:500,color:done?'var(--gray)':'var(--white)',textDecoration:done?'line-through':'none'}}>{LABELS[ck]||ck}</div>
+    </div>
+    {warn&&<textarea value={memo||''} onChange={e=>onMemo(id,ck,e.target.value)} onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
+      style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:6,padding:'7px 10px',borderRadius:8,background:'rgba(255,179,71,.08)',border:'1px solid rgba(255,179,71,.35)',fontSize:12,color:'#ffb347',resize:'none',outline:'none',minHeight:44,lineHeight:1.5}}/>}
+  </div>);
+}
+
+function Modal({onClose,title,sub,children}){
+  return(<div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(5,12,22,.85)',backdropFilter:'blur(6px)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+    <div onClick={e=>e.stopPropagation()} style={{background:'#182b42',borderRadius:'24px 24px 0 0',borderTop:'1px solid var(--border)',width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',paddingBottom:40}}>
+      <div style={{width:40,height:4,background:'rgba(255,255,255,.2)',borderRadius:2,margin:'12px auto 0'}}/>
+      <div style={{fontSize:16,fontWeight:900,padding:'16px 20px 4px',textAlign:'center'}}>{title}</div>
+      {sub&&<div style={{fontSize:11,color:'var(--gray)',textAlign:'center',paddingBottom:16}}>{sub}</div>}
+      {children}
+    </div>
+  </div>);
+}
+
+function DeleteConfirm({prop,onConfirm,onClose}){
+  if(!prop)return null;
+  return(<Modal title="🗑 削除の確認" sub={`「${prop.name}」を削除しますか？`} onClose={onClose}>
+    <div style={{display:'flex',gap:10,padding:'8px 16px 0'}}>
+      <button onClick={onClose} style={{flex:1,padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
+      <button onClick={onConfirm} style={{flex:1,padding:14,borderRadius:12,border:'none',background:'#ff5757',color:'#fff',fontSize:14,fontWeight:900}}>削除する</button>
+    </div>
+  </Modal>);
+}
+
+function CopyModal({prop,onCopy,onClose}){
+  if(!prop)return null;
+  return(<Modal title="📋 コピー先のタブを選択" sub={`「${prop.name}」のコピー先を選んでください`} onClose={onClose}>
+    <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
+      {TABS.map(t=>(
+        <button key={t.key} onClick={()=>onCopy(t.key)} style={{width:'100%',padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'rgba(255,255,255,.04)',color:'var(--white)',fontSize:14,fontWeight:700,textAlign:'left'}}>
+          {t.label}
+        </button>
+      ))}
+    </div>
+    <div style={{padding:'12px 16px 0'}}>
+      <button onClick={onClose} style={{width:'100%',padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
+    </div>
+  </Modal>);
+}
+
+function AddModal({defaultTab,onAdd,onClose}){
+  const [name,setName]=useState('');const[date,setDate]=useState('');const[buyer,setBuyer]=useState('');const[kinshoki,setKinshoki]=useState('');const[tab,setTab]=useState(defaultTab);
+  const ref=useRef();
+  useEffect(()=>{setTimeout(()=>ref.current?.focus(),300);},[]);
+  const submit=()=>{if(!name.trim()){ref.current?.focus();return;}onAdd({name:name.trim(),date,buyer,kinshoki,tab});};
+  const iStyle={width:'100%',background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 14px',color:'var(--white)',fontSize:14,outline:'none'};
+  const lStyle={fontSize:11,fontWeight:700,color:'var(--gold)',letterSpacing:'.08em',marginBottom:6,display:'block',fontFamily:'var(--mono)'};
+  return(<Modal title="🏠 新しい物件を追加" sub="入力後「追加する」を押すと即反映" onClose={onClose}>
+    {[['物件名 *',name,setName,ref,'例: MAXIV新川崎502'],['決済日',date,setDate,null,'例: 4/28'],['買主様',buyer,setBuyer,null,'例: 山田 太郎'],['金消日',kinshoki,setKinshoki,null,'例: 4/25(土) 13:00']].map(([lbl,val,set,r,ph])=>(
+      <div key={lbl} style={{padding:'0 16px 14px'}}>
+        <label style={lStyle}>{lbl}</label>
+        <input ref={r} value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={iStyle}/>
+      </div>
+    ))}
+    <div style={{padding:'0 16px 14px'}}>
+      <label style={lStyle}>タブ</label>
+      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+        {TABS.map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)} style={{padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===t.key?'var(--gold)':'rgba(255,255,255,.15)'}`,background:tab===t.key?'rgba(232,184,75,.2)':'transparent',color:tab===t.key?'var(--gold)':'var(--gray)'}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+    <div style={{display:'flex',gap:10,padding:'8px 16px 0'}}>
+      <button onClick={onClose} style={{flex:1,padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
+      <button onClick={submit} style={{flex:2,padding:14,borderRadius:12,border:'none',background:'linear-gradient(135deg,var(--gold),var(--gold2))',color:'var(--navy)',fontSize:14,fontWeight:900}}>＋ 追加する</button>
+    </div>
+  </Modal>);
+}
+
+function Card({prop,onUpdate,onDelete,onDeleteReq,onCopyReq}){
+  const [open,setOpen]=useState(false);
+  const isSbj=true; // 全物件にSBJチップを表示
+  const {done,total,hasWarn}=calc(prop.checks,prop.sbjVisible);
+  const bc=hasWarn?'rgba(255,179,71,.4)':done===total?'rgba(46,204,122,.4)':done===0?'rgba(255,87,87,.3)':'var(--border)';
+
+  const upd=(f,v)=>onUpdate(prop.id,{[f]:v});
+  const togCheck=(id,k,nxt)=>onUpdate(id,{checks:{...prop.checks,[k]:nxt}});
+  const togMemo=(id,k,v)=>onUpdate(id,{warnMemos:{...prop.warnMemos,[k]:v}});
+
+  const iStyle={background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,color:'var(--white)',fontFamily:'var(--font)'};
+
+  return(<div style={{background:'var(--card-bg)',border:`1px solid ${bc}`,borderRadius:14,overflow:'hidden',marginBottom:10}}>
+    <div onClick={e=>{if(e.target.closest('input')||e.target.closest('button')||e.target.closest('textarea'))return;setOpen(o=>!o);}}
+      style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}>
+      <Ring done={done} total={total}/>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:13,fontWeight:700,lineHeight:1.3}}>{prop.name||'（物件名未設定）'}</div>
+        <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5,alignItems:'center'}}>
+          {isSbj&&<span onClick={e=>{e.stopPropagation();onUpdate(prop.id,{sbjVisible:!prop.sbjVisible});}}
+            style={{display:'inline-flex',alignItems:'center',padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',fontFamily:'var(--mono)',
+              background:prop.sbjVisible?'rgba(100,160,255,.25)':'rgba(100,160,255,.06)',
+              color:prop.sbjVisible?'#64a0ff':'rgba(100,160,255,.4)',
+              border:`1px solid ${prop.sbjVisible?'#64a0ff':'rgba(100,160,255,.2)'}`,
+              textDecoration:prop.sbjVisible?'none':'line-through'}}>SBJ</span>}
+          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,.07)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gray)'}}>
+            📅<input value={prop.date} onChange={e=>upd('date',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="決済日" style={{...iStyle,width:52}}/>
+          </span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,.07)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gray)'}}>
+            👤<input value={prop.buyer} onChange={e=>upd('buyer',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="買主様" style={{...iStyle,width:64}}/>
+          </span>
+          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(232,184,75,.1)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gold)'}}>
+            ⏰<input value={prop.kinshoki} onChange={e=>upd('kinshoki',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="金消日" style={{...iStyle,width:110,color:'var(--gold)'}}/>
+          </span>
+        </div>
+      </div>
+      <div style={{flexShrink:0,fontSize:12,color:'var(--gray)',transition:'transform .3s',transform:open?'rotate(180deg)':'none'}}>▼</div>
+    </div>
+
+    {open&&<div style={{padding:'0 14px 14px'}}>
+      {/* 物件名編集 */}
+      <div style={{marginBottom:12,paddingBottom:12,borderBottom:'1px solid var(--border)'}}>
+        <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.08em',marginBottom:6,fontFamily:'var(--mono)'}}>🏠 物件名</div>
+        <input
+          value={prop.name}
+          onChange={e=>upd('name',e.target.value)}
+          placeholder="物件名を入力"
+          style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',
+            borderRadius:10,padding:'10px 12px',color:'var(--white)',fontSize:14,fontWeight:700,
+            outline:'none',fontFamily:'var(--font)'}}/>
+      </div>
+      {SECTIONS.map((sec,si)=>(
+        <div key={sec.label}>
+          <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.1em',textTransform:'uppercase',padding:'10px 0 6px',fontFamily:'var(--mono)',borderTop:si===0?'none':'1px solid var(--border)',marginTop:si===0?0:8}}>{sec.label}</div>
+          {sec.keys.map(k=><CheckItem key={k} id={prop.id} ck={k} val={prop.checks[k]??false} memo={prop.warnMemos?.[k]||''} onToggle={togCheck} onMemo={togMemo}/>)}
+        </div>
+      ))}
+      {isSbj&&prop.sbjVisible&&<div>
+        <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.1em',textTransform:'uppercase',padding:'10px 0 6px',fontFamily:'var(--mono)',borderTop:'1px solid var(--border)',marginTop:8}}>🏦 SBJ</div>
+        {SBJ_KEYS.map(k=><CheckItem key={k} id={prop.id} ck={k} val={prop.checks[k]??false} memo={prop.warnMemos?.[k]||''} onToggle={togCheck} onMemo={togMemo}/>)}
+      </div>}
+
+      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16,borderTop:'1px solid var(--border)',paddingTop:12}}>
+        <button onClick={e=>{e.stopPropagation();onCopyReq(prop.id);}}
+          style={{fontSize:11,color:'var(--gold)',border:'1px solid rgba(232,184,75,.4)',background:'transparent',borderRadius:8,padding:'6px 14px',fontWeight:700}}>
+          📋 コピー
+        </button>
+        <button onClick={e=>{e.stopPropagation();onDeleteReq(prop.id);}}
+          style={{fontSize:11,color:'var(--red)',border:'1px solid rgba(255,87,87,.3)',background:'transparent',borderRadius:8,padding:'6px 14px',fontWeight:700}}>
+          🗑 削除
+        </button>
+      </div>
+    </div>}
+  </div>);
+}
+
+function App(){
+  const [props,setProps]=useState(()=>load());
+  const [tab,setTab]=useState('rakuten');
+  const [flt,setFlt]=useState('all');
+  const [showAdd,setShowAdd]=useState(false);
+  const [copyId,setCopyId]=useState(null);
+  const [saved,setSaved]=useState(false);
+  const [deleteId,setDeleteId]=useState(null);
+
+  useEffect(()=>{persist(props);setSaved(true);const t=setTimeout(()=>setSaved(false),2000);return()=>clearTimeout(t);},[props]);
+
+  const upd=useCallback((id,patch)=>setProps(ps=>ps.map(p=>p.id===id?{...p,...patch}:p)),[]);
+  const del=useCallback((id)=>setProps(ps=>ps.filter(p=>p.id!==id)),[]);
+  const add=useCallback(({name,date,buyer,kinshoki,tab:t})=>{
+    setProps(ps=>[...ps,{id:'u_'+Date.now(),name,date,buyer,kinshoki,tab:t,sbjVisible:false,warnMemos:{},checks:{...DC}}]);
+    setTab(t);setShowAdd(false);
+  },[]);
+  const doCopy=useCallback((toTab)=>{
+    const src=props.find(p=>p.id===copyId);if(!src)return;
+    setProps(ps=>[...ps,{...JSON.parse(JSON.stringify(src)),id:'u_'+Date.now(),name:src.name+'（コピー）',tab:toTab}]);
+    setTab(toTab);setCopyId(null);
+  },[props,copyId]);
+
+  const visible=useMemo(()=>props.filter(p=>{
+    if(p.tab!==tab)return false;
+    if(flt==='all')return true;
+    const{done,total,hasWarn}=calc(p.checks);
+    if(flt==='done')return done===total;
+    if(flt==='undone')return done!==total;
+    if(flt==='warn')return hasWarn;
+    return true;
+  }),[props,tab,flt]);
+
+  const st=useMemo(()=>{let done=0,warn=0,active=0;props.forEach(p=>{const{done:d,total:t,hasWarn}=calc(p.checks);if(hasWarn)warn++;else if(d===t)done++;else active++;});return{total:props.length,done,warn,active};},[props]);
+
+  return(<div>
+    <div style={{background:'linear-gradient(135deg,#0d1b2a,#1a2e45)',borderBottom:'1px solid var(--border)',padding:'16px 16px 12px',position:'sticky',top:0,zIndex:100}}>
+      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+        <div>
+          <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.12em',fontFamily:'var(--mono)'}}>AXIA JAPAN</div>
+          <div style={{fontSize:17,fontWeight:900}}>物件TODOリスト</div>
+        </div>
+        <div style={{background:'rgba(46,204,122,.12)',border:'1px solid #2ecc7a',color:'#2ecc7a',fontSize:10,padding:'3px 8px',borderRadius:20,fontWeight:700,fontFamily:'var(--mono)',opacity:saved?1:0,transition:'opacity .4s'}}>✓ 保存済み</div>
+      </div>
+      <div style={{display:'flex',gap:6,overflowX:'auto'}}>
+        {TABS.map(t=>(
+          <button key={t.key} onClick={()=>setTab(t.key)}
+            style={{flexShrink:0,padding:'7px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===t.key?'var(--gold)':'rgba(255,255,255,.1)'}`,background:tab===t.key?'var(--gold)':'rgba(255,255,255,.04)',color:tab===t.key?'var(--navy)':'var(--gray)',whiteSpace:'nowrap'}}>
+            {t.label}
+          </button>
+        ))}
+      </div>
+    </div>
+
+    <div style={{display:'flex',gap:10,padding:'12px 16px',borderBottom:'1px solid var(--border)',overflowX:'auto'}}>
+      {[{n:st.total,l:'全物件',c:'var(--gold)'},{n:st.done,l:'完了',c:'#2ecc7a'},{n:st.warn,l:'要確認',c:'#ffb347'},{n:st.active,l:'対応中',c:'#ff5757'}].map(({n,l,c})=>(
+        <div key={l} style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 12px'}}>
+          <div style={{fontSize:20,fontWeight:900,fontFamily:'var(--mono)',color:c}}>{n}</div>
+          <div style={{fontSize:10,color:'var(--gray)',fontWeight:500,lineHeight:1.2}}>{l}</div>
+        </div>
+      ))}
+    </div>
+
+    <div style={{display:'flex',gap:6,padding:'10px 12px 0',overflowX:'auto'}}>
+      {[['all','すべて'],['undone','🔴 未対応あり'],['done','🟢 完了'],['warn','⚠️ 要確認']].map(([k,l])=>(
+        <button key={k} onClick={()=>setFlt(k)}
+          style={{flexShrink:0,padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,border:`1px solid ${flt===k?'var(--gold)':'rgba(255,255,255,.12)'}`,background:flt===k?'var(--navy2)':'transparent',color:flt===k?'var(--gold)':'var(--gray)'}}>
+          {l}
+        </button>
+      ))}
+    </div>
+
+    <div style={{padding:'12px 12px 0'}}>
+      {visible.length===0
+        ?<div style={{textAlign:'center',padding:'60px 20px',color:'var(--gray)',fontSize:14}}>該当する物件がありません</div>
+        :visible.map(p=><Card key={p.id} prop={p} onUpdate={upd} onDelete={del} onDeleteReq={id=>setDeleteId(id)} onCopyReq={id=>setCopyId(id)}/>)
+      }
+    </div>
+
+    <button onClick={()=>setShowAdd(true)} style={{position:'fixed',bottom:24,right:20,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,var(--gold),var(--gold2))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:'0 4px 20px rgba(232,184,75,.4)',zIndex:200,border:'none',color:'var(--navy)'}}>＋</button>
+
+    {showAdd&&<AddModal defaultTab={tab} onAdd={add} onClose={()=>setShowAdd(false)}/>}
+    {copyId&&<CopyModal prop={props.find(p=>p.id===copyId)||null} onCopy={doCopy} onClose={()=>setCopyId(null)}/>}
+    {deleteId&&<DeleteConfirm
+      prop={props.find(p=>p.id===deleteId)||null}
+      onConfirm={()=>{del(deleteId);setDeleteId(null);}}
+      onClose={()=>setDeleteId(null)}/>}
+  </div>);
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+
+</script>
+</body>
+</html>
