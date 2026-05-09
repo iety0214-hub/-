@@ -3,18 +3,18 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-<title>AXIA JAPAN｜物件TODOリスト</title>
+<title>AXIA_物件TODO</title>
 <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react-dom/18.2.0/umd/react-dom.production.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/babel-standalone/7.23.2/babel.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0;-webkit-tap-highlight-color:transparent}
-:root{--navy:#0d1b2a;--navy2:#1a2e45;--gold:#e8b84b;--gold2:#f5d07a;--white:#f8f5ef;--gray:#8a9bb0;--green:#2ecc7a;--red:#ff5757;--warn:#ffb347;--card-bg:#152236;--border:rgba(232,184,75,0.18);--font:'Noto Sans JP',sans-serif;--mono:'DM Mono',monospace;}
-html,body,#root{min-height:100vh;background:var(--navy);color:var(--white);font-family:var(--font)}
+html,body,#root{min-height:100vh;background:#f0f4ff;font-family:'Noto Sans JP',sans-serif}
 body{padding-bottom:90px}
-button{font-family:var(--font);cursor:pointer}
-input,textarea{font-family:var(--font)}
+button{font-family:'Noto Sans JP',sans-serif;cursor:pointer}
+input,textarea{font-family:'Noto Sans JP',sans-serif}
 ::-webkit-scrollbar{display:none}
 </style>
 </head>
@@ -23,371 +23,735 @@ input,textarea{font-family:var(--font)}
 <script type="text/babel">
 const { useState, useCallback, useMemo, useRef, useEffect } = React;
 
-const STORAGE_KEY = 'axia_react_v1';
-const TABS = [
-  {key:'rakuten',label:'🏦 楽天'},
-  {key:'sbj',label:'🏛 SBJ'},
-  {key:'jisha_rakuten',label:'🏢 自社楽天'},
-  {key:'jisha_sbj',label:'🏗 自社SBJ'},
-];
-const SECTIONS = [
-  {label:'■ 契約＆重説',keys:['keiyaku_sakusei','keiyaku_eigyo','gmo_send','gmo_cert']},
-  {label:'📝 書士書類',keys:['toroki','shorui_umu','seikyu','kinshoki_share','eigyo_to','eigyo_from','suikama']},
-  {label:'🔥 火災保険',keys:['hoken_iraishita','hoken_juryou','hoken_eigyo']},
-  {label:'🏗 建管書類',keys:['tatekam_soroi','tatekam_eigyo']},
-];
-const SBJ_KEYS = ['sbj_honin','sbj_dansin','sbj_approval'];
-const LABELS = {
-  keiyaku_sakusei:'作成完了',keiyaku_eigyo:'営業へ渡した',
-  gmo_send:'GMO送信',gmo_cert:'GMO証明完了',toroki:'登記依頼',
-  shorui_umu:'書士書類 有無確認',seikyu:'請求書提出',kinshoki_share:'金消日 共有',
-  eigyo_to:'営業へ渡した',eigyo_from:'営業から受領',suikama:'洲鎌に郵送',
-  hoken_iraishita:'火災保険 依頼済み',hoken_juryou:'火災保険 書類受領',hoken_eigyo:'火災保険 営業へ渡した',
-  tatekam_soroi:'建管書類 揃っているか',tatekam_eigyo:'営業へ渡した',
-  sbj_honin:'本人確認 完了',sbj_dansin:'団信申込 完了',sbj_approval:'承認登録 完了',
+// ══════════════════════════════════════
+// ⚙️ Supabase設定 - ここを自分の値に書き換えてください
+// ══════════════════════════════════════
+const SUPABASE_URL  = 'https://zrqdoorolwvjlwuatlkc.supabase.co';    // 例: https://xxxxxx.supabase.co
+const SUPABASE_KEY  = 'sb_publishable_qTfps32ER4iHTo_o3zkCEw_HlJdMq_c'; // 例: sb_publishable_xxxx
+const TABLE_NAME    = 'axia_buken_todo';
+const SK_SETTINGS   = 'axia_buken_settings_v1';
+
+const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+// ══════════════════════════════════════
+// デフォルト設定
+// ══════════════════════════════════════
+const DEFAULT_SETTINGS = {
+  appTitle: 'AXIA_物件TODO',
+  itemLabel: '物件',
+  fields: [
+    { key: 'f_date',     label: '決済日',  icon: '📅', width: 52 },
+    { key: 'f_buyer',    label: '買主様',  icon: '👤', width: 64 },
+    { key: 'f_kinshoki', label: '金消日',  icon: '⏰', width: 110, highlight: true },
+  ],
+  tabs: [
+    { key: 'rakuten',       label: '🏦 楽天' },
+    { key: 'sbj',           label: '🏛 SBJ' },
+    { key: 'jisha_rakuten', label: '🏢 自社楽天' },
+    { key: 'jisha_sbj',     label: '🏗 自社SBJ' },
+  ],
+  sections: [
+    { id: 's1', label: '■ 契約＆重説', items: [
+      { key: 'keiyaku_sakusei', label: '作成完了' },
+      { key: 'keiyaku_eigyo',   label: '営業へ渡した' },
+      { key: 'gmo_send',        label: 'GMO送信' },
+      { key: 'gmo_cert',        label: 'GMO証明完了' },
+    ]},
+    { id: 's2', label: '📝 書士書類', items: [
+      { key: 'toroki',         label: '登記依頼' },
+      { key: 'shorui_umu',     label: '書士書類 有無確認' },
+      { key: 'seikyu',         label: '請求書提出' },
+      { key: 'kinshoki_share', label: '金消日 共有' },
+      { key: 'eigyo_to',       label: '営業へ渡した' },
+      { key: 'eigyo_from',     label: '営業から受領' },
+      { key: 'suikama',        label: '洲鎌に郵送' },
+    ]},
+    { id: 's3', label: '🔥 火災保険', items: [
+      { key: 'hoken_iraishita', label: '火災保険 依頼済み' },
+      { key: 'hoken_juryou',    label: '火災保険 書類受領' },
+      { key: 'hoken_eigyo',     label: '火災保険 営業へ渡した' },
+    ]},
+    { id: 's4', label: '🏗 建管書類', items: [
+      { key: 'tatekam_soroi', label: '建管書類 揃っているか' },
+      { key: 'tatekam_eigyo', label: '営業へ渡した' },
+    ]},
+  ],
+  sbjSection: {
+    enabled: true,
+    label: '⭐ 特別セクション',
+    items: [
+      { key: 'sbj_honin',    label: '本人確認 完了' },
+      { key: 'sbj_dansin',   label: '団信申込 完了' },
+      { key: 'sbj_approval', label: '承認登録 完了' },
+    ],
+  },
 };
-const DC = {keiyaku_sakusei:false,keiyaku_eigyo:false,gmo_send:false,gmo_cert:false,toroki:false,shorui_umu:false,seikyu:false,kinshoki_share:false,eigyo_to:false,eigyo_from:false,suikama:false,hoken_iraishita:false,hoken_juryou:false,hoken_eigyo:false,tatekam_soroi:false,tatekam_eigyo:false};
 
-const INIT = [
-  {id:'p01',name:'ライジングプレイス川崎609',tab:'sbj',date:'4/28',buyer:'原田 海斗',kinshoki:'4/22(火) 13:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
-  {id:'p02',name:'MAXIV新川崎502',tab:'rakuten',date:'4/28',buyer:'石川 彰真',kinshoki:'4/19(土) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
-  {id:'p03',name:'MAXIV西大島610',tab:'rakuten',date:'4/28',buyer:'石川 彰真',kinshoki:'4/19(土) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
-  {id:'p04',name:'アゼスト富士見町208',tab:'rakuten',date:'4/28',buyer:'橋田 直樹',kinshoki:'4/20(日) 14:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
-  {id:'p05',name:'ベルシード志村坂上',tab:'rakuten',date:'4/28',buyer:'岡田 学人',kinshoki:'4/20(日) 18:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,gmo_cert:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true}},
-  {id:'p06',name:'セジョリ押上イースト610',tab:'rakuten',date:'4/28',buyer:'久壽米木 直人',kinshoki:'4/13(日) 18:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
-  {id:'p07',name:'ステージファーストつつじヶ丘903',tab:'rakuten',date:'4/28',buyer:'山端 詩',kinshoki:'4/21(月) 19:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
-  {id:'p08',name:'スパシエ横浜大通り公園1002',tab:'rakuten',date:'4/28',buyer:'岩方 千紘',kinshoki:'4/18(土) 10:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true}},
-  {id:'p09',name:'エステムコート大阪シティサイト502',tab:'sbj',date:'4/28',buyer:'鈴木 周',kinshoki:'4/9(木) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true,tatekam_soroi:true}},
-  {id:'p10',name:'AXIACITY大阪淡路401',tab:'jisha_rakuten',date:'4/30',buyer:'村井 嶺太',kinshoki:'4/21(月) 19:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
-  {id:'p11',name:'AXIACITY大阪淡路201',tab:'jisha_rakuten',date:'4/30',buyer:'佐藤 将',kinshoki:'4/18(金) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
-  {id:'p12',name:'AXIACITY大阪淡路102',tab:'jisha_rakuten',date:'4/30',buyer:'田口 航太',kinshoki:'4/12(土) 15:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,suikama:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true,tatekam_soroi:true}},
-  {id:'p13',name:'AXIACITY大阪淡路302',tab:'jisha_rakuten',date:'4/30',buyer:'山本 啓太',kinshoki:'4/18(土) 14:00',sbjVisible:false,warnMemos:{},checks:{...DC,gmo_send:true,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
-  {id:'p14',name:'AXIACITY大阪淡路303',tab:'jisha_rakuten',date:'4/30',buyer:'蓜島 玲矢',kinshoki:'4/25(土) 11:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
-  {id:'p15',name:'ヴェルト新宿夏目坂1002',tab:'rakuten',date:'4/28',buyer:'藤崎 真',kinshoki:'4/2',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,suikama:true,hoken_iraishita:true,hoken_juryou:true,hoken_eigyo:true}},
-  {id:'p16',name:'シティインデックス新宿若松町702',tab:'rakuten',date:'4/28',buyer:'川逑 佳史',kinshoki:'4/19(土) 10:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true}},
-  {id:'p17',name:'AXIACITY大阪淡路204',tab:'jisha_rakuten',date:'4/28',buyer:'千葉 陽樹',kinshoki:'4/20(月) 19:00',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:'warn',eigyo_to:true,eigyo_from:true,hoken_iraishita:true,hoken_juryou:true,tatekam_soroi:true}},
-  {id:'p18',name:'MAXIV新栄306',tab:'sbj',date:'4/28',buyer:'平野 和幸',kinshoki:'4/24(金) 12:30',sbjVisible:false,warnMemos:{},checks:{...DC}},
-  {id:'p19',name:'MAXIV新栄1405',tab:'sbj',date:'4/28',buyer:'市位 潤也',kinshoki:'4/24(金) 12:30',sbjVisible:false,warnMemos:{},checks:{...DC}},
-  {id:'p20',name:'MAXIV新栄203',tab:'sbj',date:'4/28',buyer:'吉村 海',kinshoki:'4/24(月) 18:15',sbjVisible:false,warnMemos:{},checks:{...DC}},
-  {id:'p21',name:'ラナップスクエア新福島604',tab:'sbj',date:'4/28',buyer:'小林 健人',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
-  {id:'p22',name:'AXIACITY大阪淡路404',tab:'jisha_rakuten',date:'4/28',buyer:'内海 和政',kinshoki:'4/20(月) 19:30',sbjVisible:false,warnMemos:{},checks:{...DC,toroki:true,shorui_umu:true,kinshoki_share:true,eigyo_to:true,hoken_iraishita:true,tatekam_soroi:true}},
-  {id:'p23',name:'AC加賀屋602',tab:'rakuten',date:'',buyer:'髙江 渉',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC}},
-  {id:'p24',name:'プレサンス城北公園アクアージュ602',tab:'rakuten',date:'',buyer:'',kinshoki:'',sbjVisible:false,warnMemos:{},checks:{...DC}},
-];
+// ══════════════════════════════════════
+// ストレージ
+// ══════════════════════════════════════
+function loadSettings() {
+  try {
+    const s = localStorage.getItem(SK_SETTINGS);
+    if (s) return { ...DEFAULT_SETTINGS, ...JSON.parse(s) };
+  } catch(e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_SETTINGS));
+}
+function saveSettings(s) { localStorage.setItem(SK_SETTINGS, JSON.stringify(s)); }
 
-function load(){try{const s=localStorage.getItem(STORAGE_KEY);if(s)return JSON.parse(s);}catch(e){}return INIT.map(p=>({...p}));}
-function persist(ps){localStorage.setItem(STORAGE_KEY,JSON.stringify(ps));}
-function getAllKeys(){return[...SECTIONS.flatMap(s=>s.keys),...SBJ_KEYS];}
-function calc(checks,sbjVisible=false){
-  const keys=[...SECTIONS.flatMap(s=>s.keys),...(sbjVisible?SBJ_KEYS:[])];
-  const done=keys.filter(k=>(checks[k]??false)===true).length;
-  const total=keys.length;
-  const hasWarn=keys.some(k=>(checks[k]??false)==='warn');
-  return{done,total,hasWarn};
+async function loadPropsFromDB() {
+  try {
+    const { data, error } = await supabase.from(TABLE_NAME).select('*').order('created_at', { ascending: true });
+    if (error) throw error;
+    return (data || []).map(row => ({
+      id:         String(row.id),
+      name:       row.name || '',
+      fields:     row.fields || {},
+      tab:        row.tab || '',
+      sbjVisible: row.sbj_visible || false,
+      warnMemos:  row.warn_memos || {},
+      checks:     row.checks || {},
+    }));
+  } catch(e) { console.error('loadProps error:', e); return []; }
 }
 
-function Ring({done,total}){
-  const sz=44,r=sz/2-5,c=2*Math.PI*r,pct=total>0?done/total:0,d=c*pct;
-  const col=pct===1?'#2ecc7a':pct>.6?'#e8b84b':pct>0?'#ff9f43':'#ff5757';
-  return(<svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{transform:'rotate(-90deg)'}}>
-    <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="rgba(255,255,255,.08)" strokeWidth="4"/>
-    <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={col} strokeWidth="4" strokeDasharray={`${d} ${c}`} strokeLinecap="round"/>
-    <text x={sz/2} y={sz/2+5} textAnchor="middle" fill={col} fontSize="11" fontFamily="DM Mono,monospace" fontWeight="700"
-      style={{transform:`rotate(90deg)`,transformOrigin:`${sz/2}px ${sz/2}px`}}>{done}/{total}</text>
-  </svg>);
+async function addPropToDB(prop) {
+  try {
+    const { data, error } = await supabase.from(TABLE_NAME).insert([{
+      name:        prop.name,
+      fields:      prop.fields,
+      tab:         prop.tab,
+      sbj_visible: prop.sbjVisible,
+      warn_memos:  prop.warnMemos,
+      checks:      prop.checks,
+    }]).select().single();
+    if (error) throw error;
+    return String(data.id);
+  } catch(e) { console.error('addProp error:', e); return prop.id; }
 }
 
-function CheckItem({id,ck,val,memo,onToggle,onMemo}){
-  const done=val===true,warn=val==='warn';
-  const next=val===false?true:val===true?'warn':false;
-  const icon=warn?'⚠️':done?'✅':'❌';
-  const bg=warn?'rgba(255,179,71,.12)':done?'rgba(46,204,122,.12)':'rgba(255,87,87,.12)';
-  const bc=warn?'#ffb347':done?'#2ecc7a':'#ff5757';
-  return(<div>
-    <div onClick={()=>onToggle(id,ck,next)} style={{display:'flex',alignItems:'center',gap:10,padding:'8px 4px',borderBottom:'1px solid rgba(255,255,255,.04)',cursor:'pointer',borderRadius:8}}>
-      <div style={{flexShrink:0,width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:16,background:bg,border:`2px solid ${bc}`}}>{icon}</div>
-      <div style={{flex:1,fontSize:13,fontWeight:500,color:done?'var(--gray)':'var(--white)',textDecoration:done?'line-through':'none'}}>{LABELS[ck]||ck}</div>
-    </div>
-    {warn&&<textarea value={memo||''} onChange={e=>onMemo(id,ck,e.target.value)} onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
-      style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:6,padding:'7px 10px',borderRadius:8,background:'rgba(255,179,71,.08)',border:'1px solid rgba(255,179,71,.35)',fontSize:12,color:'#ffb347',resize:'none',outline:'none',minHeight:44,lineHeight:1.5}}/>}
-  </div>);
+async function updatePropInDB(id, patch) {
+  try {
+    const dbPatch = {};
+    if (patch.name       !== undefined) dbPatch.name        = patch.name;
+    if (patch.fields     !== undefined) dbPatch.fields      = patch.fields;
+    if (patch.tab        !== undefined) dbPatch.tab         = patch.tab;
+    if (patch.sbjVisible !== undefined) dbPatch.sbj_visible = patch.sbjVisible;
+    if (patch.warnMemos  !== undefined) dbPatch.warn_memos  = patch.warnMemos;
+    if (patch.checks     !== undefined) dbPatch.checks      = patch.checks;
+    if (Object.keys(dbPatch).length === 0) return;
+    const { error } = await supabase.from(TABLE_NAME).update(dbPatch).eq('id', Number(id));
+    if (error) throw error;
+  } catch(e) { console.error('updateProp error:', e); }
 }
 
-function Modal({onClose,title,sub,children}){
-  return(<div onClick={onClose} style={{position:'fixed',inset:0,background:'rgba(5,12,22,.85)',backdropFilter:'blur(6px)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
-    <div onClick={e=>e.stopPropagation()} style={{background:'#182b42',borderRadius:'24px 24px 0 0',borderTop:'1px solid var(--border)',width:'100%',maxWidth:560,maxHeight:'90vh',overflowY:'auto',paddingBottom:40}}>
-      <div style={{width:40,height:4,background:'rgba(255,255,255,.2)',borderRadius:2,margin:'12px auto 0'}}/>
-      <div style={{fontSize:16,fontWeight:900,padding:'16px 20px 4px',textAlign:'center'}}>{title}</div>
-      {sub&&<div style={{fontSize:11,color:'var(--gray)',textAlign:'center',paddingBottom:16}}>{sub}</div>}
-      {children}
-    </div>
-  </div>);
+async function deletePropFromDB(id) {
+  try {
+    const { error } = await supabase.from(TABLE_NAME).delete().eq('id', Number(id));
+    if (error) throw error;
+  } catch(e) { console.error('deleteProp error:', e); }
 }
 
-function MoveModal({prop,onMove,onClose}){
-  if(!prop)return null;
-  return(<Modal title="📂 タブを移動" sub={`「${prop.name}」の移動先を選んでください`} onClose={onClose}>
-    <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
-      {TABS.map(t=>(
-        <button key={t.key} onClick={()=>onMove(t.key)}
-          style={{width:'100%',padding:14,borderRadius:12,
-            border:`1px solid ${t.key===prop.tab?'var(--gold)':'rgba(255,255,255,.15)'}`,
-            background:t.key===prop.tab?'rgba(232,184,75,.15)':'rgba(255,255,255,.04)',
-            color:t.key===prop.tab?'var(--gold)':'var(--white)',
-            fontSize:14,fontWeight:700,textAlign:'left',
-            opacity:t.key===prop.tab?0.5:1,
-            pointerEvents:t.key===prop.tab?'none':'auto'}}>
-          {t.key===prop.tab?'✓ 現在のタブ　':''}{t.label}
-        </button>
-      ))}
-    </div>
-    <div style={{padding:'12px 16px 0'}}>
-      <button onClick={onClose}
-        style={{width:'100%',padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',
-          background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>
-        キャンセル
-      </button>
-    </div>
-  </Modal>);
+// ══════════════════════════════════════
+// ヘルパー
+// ══════════════════════════════════════
+function genId() { return '_' + Math.random().toString(36).slice(2, 10); }
+
+function calcProgress(checks, settings, sbjVisible) {
+  const keys = settings.sections.flatMap(s => s.items.map(i => i.key));
+  if (settings.sbjSection.enabled && sbjVisible) {
+    keys.push(...settings.sbjSection.items.map(i => i.key));
+  }
+  const done    = keys.filter(k => (checks[k] ?? false) === true).length;
+  const total   = keys.length;
+  const hasWarn = keys.some(k => (checks[k] ?? false) === 'warn');
+  return { done, total, hasWarn };
 }
 
-function DeleteConfirm({prop,onConfirm,onClose}){
-  if(!prop)return null;
-  return(<Modal title="🗑 削除の確認" sub={`「${prop.name}」を削除しますか？`} onClose={onClose}>
-    <div style={{display:'flex',gap:10,padding:'8px 16px 0'}}>
-      <button onClick={onClose} style={{flex:1,padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
-      <button onClick={onConfirm} style={{flex:1,padding:14,borderRadius:12,border:'none',background:'#ff5757',color:'#fff',fontSize:14,fontWeight:900}}>削除する</button>
-    </div>
-  </Modal>);
+function makeChecks(settings) {
+  const obj = {};
+  settings.sections.forEach(s => s.items.forEach(i => { obj[i.key] = false; }));
+  settings.sbjSection.items.forEach(i => { obj[i.key] = false; });
+  return obj;
 }
 
-function CopyModal({prop,onCopy,onClose}){
-  if(!prop)return null;
-  return(<Modal title="📋 コピー先のタブを選択" sub={`「${prop.name}」のコピー先を選んでください`} onClose={onClose}>
-    <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
-      {TABS.map(t=>(
-        <button key={t.key} onClick={()=>onCopy(t.key)} style={{width:'100%',padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'rgba(255,255,255,.04)',color:'var(--white)',fontSize:14,fontWeight:700,textAlign:'left'}}>
-          {t.label}
-        </button>
-      ))}
-    </div>
-    <div style={{padding:'12px 16px 0'}}>
-      <button onClick={onClose} style={{width:'100%',padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
-    </div>
-  </Modal>);
+// ══════════════════════════════════════
+// Ring
+// ══════════════════════════════════════
+function Ring({ done, total }) {
+  const sz=44, r=sz/2-5, c=2*Math.PI*r, pct=total>0?done/total:0, d=c*pct;
+  const col = pct===1?'#10b981':pct>.6?'#f59e0b':pct>0?'#f97316':'#ef4444';
+  return (
+    <svg width={sz} height={sz} viewBox={`0 0 ${sz} ${sz}`} style={{transform:'rotate(-90deg)'}}>
+      <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke="#e8eeff" strokeWidth="4"/>
+      <circle cx={sz/2} cy={sz/2} r={r} fill="none" stroke={col} strokeWidth="4"
+        strokeDasharray={`${d} ${c}`} strokeLinecap="round"/>
+      <text x={sz/2} y={sz/2+5} textAnchor="middle" fill={col} fontSize="10"
+        fontFamily="DM Mono,monospace" fontWeight="800"
+        style={{transform:`rotate(90deg)`,transformOrigin:`${sz/2}px ${sz/2}px`}}>
+        {done}/{total}
+      </text>
+    </svg>
+  );
 }
 
-function AddModal({defaultTab,onAdd,onClose}){
-  const [name,setName]=useState('');const[date,setDate]=useState('');const[buyer,setBuyer]=useState('');const[kinshoki,setKinshoki]=useState('');const[tab,setTab]=useState(defaultTab);
-  const ref=useRef();
-  useEffect(()=>{setTimeout(()=>ref.current?.focus(),300);},[]);
-  const submit=()=>{if(!name.trim()){ref.current?.focus();return;}onAdd({name:name.trim(),date,buyer,kinshoki,tab});};
-  const iStyle={width:'100%',background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',borderRadius:10,padding:'11px 14px',color:'var(--white)',fontSize:14,outline:'none'};
-  const lStyle={fontSize:11,fontWeight:700,color:'var(--gold)',letterSpacing:'.08em',marginBottom:6,display:'block',fontFamily:'var(--mono)'};
-  return(<Modal title="🏠 新しい物件を追加" sub="入力後「追加する」を押すと即反映" onClose={onClose}>
-    {[['物件名 *',name,setName,ref,'例: MAXIV新川崎502'],['決済日',date,setDate,null,'例: 4/28'],['買主様',buyer,setBuyer,null,'例: 山田 太郎'],['金消日',kinshoki,setKinshoki,null,'例: 4/25(土) 13:00']].map(([lbl,val,set,r,ph])=>(
-      <div key={lbl} style={{padding:'0 16px 14px'}}>
-        <label style={lStyle}>{lbl}</label>
-        <input ref={r} value={val} onChange={e=>set(e.target.value)} placeholder={ph} style={iStyle}/>
+// ══════════════════════════════════════
+// Modal
+// ══════════════════════════════════════
+function Modal({ onClose, title, sub, children }) {
+  return (
+    <div onClick={onClose}
+      style={{position:'fixed',inset:0,background:'rgba(30,42,74,0.45)',backdropFilter:'blur(4px)',zIndex:300,display:'flex',alignItems:'flex-end',justifyContent:'center'}}>
+      <div onClick={e => e.stopPropagation()}
+        style={{background:'#fff',borderRadius:'24px 24px 0 0',borderTop:'3px solid #c8a94a',width:'100%',maxWidth:600,maxHeight:'92vh',overflowY:'auto',paddingBottom:40,boxShadow:'0 -8px 40px rgba(200,169,74,.18)'}}>
+        <div style={{width:40,height:4,background:'#e0e7ff',borderRadius:2,margin:'12px auto 0'}}/>
+        {title && <div style={{fontSize:16,fontWeight:900,padding:'14px 20px 4px',textAlign:'center',color:'#1e2a4a'}}>{title}</div>}
+        {sub   && <div style={{fontSize:11,color:'#8a96b8',textAlign:'center',paddingBottom:12,padding:'0 20px 12px'}}>{sub}</div>}
+        {children}
       </div>
-    ))}
-    <div style={{padding:'0 16px 14px'}}>
-      <label style={lStyle}>タブ</label>
-      <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
-        {TABS.map(t=>(
-          <button key={t.key} onClick={()=>setTab(t.key)} style={{padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===t.key?'var(--gold)':'rgba(255,255,255,.15)'}`,background:tab===t.key?'rgba(232,184,75,.2)':'transparent',color:tab===t.key?'var(--gold)':'var(--gray)'}}>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
+// CheckItem
+// ══════════════════════════════════════
+function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
+  const done = value === true, warn = value === 'warn';
+  const next = value === false ? true : value === true ? 'warn' : false;
+  const icon = warn ? '⚠️' : done ? '✅' : '❌';
+  const bg   = warn ? '#fff7ed' : done ? '#f0fdf4' : '#fef2f2';
+  const bc   = warn ? '#f97316' : done ? '#10b981' : '#ef4444';
+  const isAlert = item.label.startsWith('⚠️');
+  return (
+    <div>
+      <div onClick={() => onToggle(propId, item.key, next)}
+        style={{display:'flex',alignItems:'center',gap:10,padding:'9px 6px',borderBottom:'1px solid #f0f4ff',cursor:'pointer',borderRadius:8,background:isAlert?'#fffbeb':'transparent'}}>
+        <div style={{flexShrink:0,width:32,height:32,borderRadius:'50%',display:'flex',alignItems:'center',justifyContent:'center',fontSize:15,background:bg,border:`2px solid ${bc}`}}>{icon}</div>
+        <div style={{flex:1,fontSize:13,fontWeight:isAlert?700:500,color:done?'#a0aec0':isAlert?'#92400e':'#1e2a4a',textDecoration:done?'line-through':'none'}}>{item.label}</div>
+      </div>
+      {warn && (
+        <textarea value={warnMemo||''} onChange={e=>onWarnMemo(propId,item.key,e.target.value)}
+          onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
+          style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:4,padding:'7px 10px',borderRadius:8,background:'#fff7ed',border:'1px solid #fdba74',fontSize:12,color:'#c2410c',resize:'none',outline:'none',minHeight:40,lineHeight:1.5}}/>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
+// 各モーダル
+// ══════════════════════════════════════
+function DeleteConfirm({ prop, onConfirm, onClose }) {
+  if (!prop) return null;
+  return (
+    <Modal title="🗑 削除の確認" sub={`「${prop.name}」を削除しますか？`} onClose={onClose}>
+      <div style={{display:'flex',gap:10,padding:'8px 16px 0'}}>
+        <button onClick={onClose} style={{flex:1,padding:13,borderRadius:12,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:14,fontWeight:700}}>キャンセル</button>
+        <button onClick={onConfirm} style={{flex:1,padding:13,borderRadius:12,border:'none',background:'linear-gradient(135deg,#ef4444,#f87171)',color:'#fff',fontSize:14,fontWeight:900}}>削除する</button>
+      </div>
+    </Modal>
+  );
+}
+
+function MoveModal({ prop, settings, onMove, onClose }) {
+  if (!prop) return null;
+  return (
+    <Modal title="📂 タブを移動" sub={`「${prop.name}」の移動先を選んでください`} onClose={onClose}>
+      <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
+        {settings.tabs.map(t => (
+          <button key={t.key} onClick={() => onMove(t.key)}
+            style={{width:'100%',padding:13,borderRadius:12,border:`1px solid ${t.key===prop.tab?'#c8a94a':'#dde3f5'}`,background:t.key===prop.tab?'#fef9ec':'#f7f9ff',color:t.key===prop.tab?'#92400e':'#1e2a4a',fontSize:14,fontWeight:700,textAlign:'left',opacity:t.key===prop.tab?.5:1,pointerEvents:t.key===prop.tab?'none':'auto'}}>
+            {t.key===prop.tab ? '✓ 現在　' : ''}{t.label}
+          </button>
+        ))}
+      </div>
+      <div style={{padding:'10px 16px 0'}}>
+        <button onClick={onClose} style={{width:'100%',padding:13,borderRadius:12,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:14,fontWeight:700}}>キャンセル</button>
+      </div>
+    </Modal>
+  );
+}
+
+function CopyModal({ prop, settings, onCopy, onClose }) {
+  if (!prop) return null;
+  return (
+    <Modal title="📋 コピー先のタブを選択" sub={`「${prop.name}」のコピー先を選んでください`} onClose={onClose}>
+      <div style={{padding:'0 16px',display:'flex',flexDirection:'column',gap:8}}>
+        {settings.tabs.map(t => (
+          <button key={t.key} onClick={() => onCopy(t.key)}
+            style={{width:'100%',padding:13,borderRadius:12,border:'1px solid #dde3f5',background:'#f7f9ff',color:'#1e2a4a',fontSize:14,fontWeight:700,textAlign:'left'}}>
             {t.label}
           </button>
         ))}
       </div>
-    </div>
-    <div style={{display:'flex',gap:10,padding:'8px 16px 0'}}>
-      <button onClick={onClose} style={{flex:1,padding:14,borderRadius:12,border:'1px solid rgba(255,255,255,.15)',background:'transparent',color:'var(--gray)',fontSize:14,fontWeight:700}}>キャンセル</button>
-      <button onClick={submit} style={{flex:2,padding:14,borderRadius:12,border:'none',background:'linear-gradient(135deg,var(--gold),var(--gold2))',color:'var(--navy)',fontSize:14,fontWeight:900}}>＋ 追加する</button>
-    </div>
-  </Modal>);
+      <div style={{padding:'10px 16px 0'}}>
+        <button onClick={onClose} style={{width:'100%',padding:13,borderRadius:12,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:14,fontWeight:700}}>キャンセル</button>
+      </div>
+    </Modal>
+  );
 }
 
-function Card({prop,onUpdate,onDelete,onDeleteReq,onCopyReq,onMoveReq}){
-  const [open,setOpen]=useState(false);
-  const isSbj=true; // 全物件にSBJチップを表示
-  const {done,total,hasWarn}=calc(prop.checks,prop.sbjVisible);
-  const bc=hasWarn?'rgba(255,179,71,.4)':done===total?'rgba(46,204,122,.4)':done===0?'rgba(255,87,87,.3)':'var(--border)';
+function AddPropModal({ settings, defaultTab, onAdd, onClose }) {
+  const [name, setName]   = useState('');
+  const [fields, setFields] = useState(() => {
+    const obj = {};
+    settings.fields.forEach(f => { obj[f.key] = ''; });
+    return obj;
+  });
+  const [tab, setTab] = useState(defaultTab || settings.tabs[0]?.key || '');
+  const ref = useRef();
+  useEffect(() => { setTimeout(() => ref.current?.focus(), 300); }, []);
 
-  const upd=(f,v)=>onUpdate(prop.id,{[f]:v});
-  const togCheck=(id,k,nxt)=>onUpdate(id,{checks:{...prop.checks,[k]:nxt}});
-  const togMemo=(id,k,v)=>onUpdate(id,{warnMemos:{...prop.warnMemos,[k]:v}});
+  const submit = () => {
+    if (!name.trim()) { ref.current?.focus(); return; }
+    onAdd({ name: name.trim(), fields, tab });
+  };
 
-  const iStyle={background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,color:'var(--white)',fontFamily:'var(--font)'};
-
-  return(<div style={{background:'var(--card-bg)',border:`1px solid ${bc}`,borderRadius:14,overflow:'hidden',marginBottom:10}}>
-    <div onClick={e=>{if(e.target.closest('input')||e.target.closest('button')||e.target.closest('textarea'))return;setOpen(o=>!o);}}
-      style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer'}}>
-      <Ring done={done} total={total}/>
-      <div style={{flex:1,minWidth:0}}>
-        <div style={{fontSize:13,fontWeight:700,lineHeight:1.3}}>{prop.name||'（物件名未設定）'}</div>
-        <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5,alignItems:'center'}}>
-          {isSbj&&<span onClick={e=>{e.stopPropagation();onUpdate(prop.id,{sbjVisible:!prop.sbjVisible});}}
-            style={{display:'inline-flex',alignItems:'center',padding:'2px 8px',borderRadius:8,fontSize:10,fontWeight:700,cursor:'pointer',userSelect:'none',fontFamily:'var(--mono)',
-              background:prop.sbjVisible?'rgba(100,160,255,.25)':'rgba(100,160,255,.06)',
-              color:prop.sbjVisible?'#64a0ff':'rgba(100,160,255,.4)',
-              border:`1px solid ${prop.sbjVisible?'#64a0ff':'rgba(100,160,255,.2)'}`,
-              textDecoration:prop.sbjVisible?'none':'line-through'}}>SBJ</span>}
-          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,.07)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gray)'}}>
-            📅<input value={prop.date} onChange={e=>upd('date',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="決済日" style={{...iStyle,width:52}}/>
-          </span>
-          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(255,255,255,.07)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gray)'}}>
-            👤<input value={prop.buyer} onChange={e=>upd('buyer',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="買主様" style={{...iStyle,width:64}}/>
-          </span>
-          <span style={{display:'inline-flex',alignItems:'center',gap:3,background:'rgba(232,184,75,.1)',borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,color:'var(--gold)'}}>
-            ⏰<input value={prop.kinshoki} onChange={e=>upd('kinshoki',e.target.value)} onClick={e=>e.stopPropagation()} placeholder="金消日" style={{...iStyle,width:110,color:'var(--gold)'}}/>
-          </span>
-        </div>
+  return (
+    <Modal title={`🏠 ${settings.itemLabel}を追加`} sub="入力後「追加する」を押すと即反映" onClose={onClose}>
+      <div style={{padding:'0 16px 10px'}}>
+        <label style={{fontSize:11,fontWeight:700,color:'#c8a94a',letterSpacing:'.06em',marginBottom:5,display:'block'}}>{settings.itemLabel}名 *</label>
+        <input ref={ref} value={name} onChange={e=>setName(e.target.value)} placeholder={`${settings.itemLabel}名を入力`}
+          style={{width:'100%',background:'#f0f4ff',border:'1px solid #c8d2f0',borderRadius:10,padding:'11px 12px',color:'#1e2a4a',fontSize:14,outline:'none'}}/>
       </div>
-      <div style={{flexShrink:0,fontSize:12,color:'var(--gray)',transition:'transform .3s',transform:open?'rotate(180deg)':'none'}}>▼</div>
-    </div>
-
-    {open&&<div style={{padding:'0 14px 14px'}}>
-      {/* 物件名編集 */}
-      <div style={{marginBottom:12,paddingBottom:12,borderBottom:'1px solid var(--border)'}}>
-        <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.08em',marginBottom:6,fontFamily:'var(--mono)'}}>🏠 物件名</div>
-        <input
-          value={prop.name}
-          onChange={e=>upd('name',e.target.value)}
-          placeholder="物件名を入力"
-          style={{width:'100%',background:'rgba(255,255,255,.06)',border:'1px solid var(--border)',
-            borderRadius:10,padding:'10px 12px',color:'var(--white)',fontSize:14,fontWeight:700,
-            outline:'none',fontFamily:'var(--font)'}}/>
-      </div>
-      {SECTIONS.map((sec,si)=>(
-        <div key={sec.label}>
-          <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.1em',textTransform:'uppercase',padding:'10px 0 6px',fontFamily:'var(--mono)',borderTop:si===0?'none':'1px solid var(--border)',marginTop:si===0?0:8}}>{sec.label}</div>
-          {sec.keys.map(k=><CheckItem key={k} id={prop.id} ck={k} val={prop.checks[k]??false} memo={prop.warnMemos?.[k]||''} onToggle={togCheck} onMemo={togMemo}/>)}
+      {settings.fields.map(f => (
+        <div key={f.key} style={{padding:'0 16px 10px'}}>
+          <label style={{fontSize:11,fontWeight:700,color:'#c8a94a',letterSpacing:'.06em',marginBottom:5,display:'block'}}>{f.label}</label>
+          <input value={fields[f.key]||''} onChange={e=>setFields(prev=>({...prev,[f.key]:e.target.value}))} placeholder={f.label}
+            style={{width:'100%',background:'#f0f4ff',border:'1px solid #c8d2f0',borderRadius:10,padding:'11px 12px',color:'#1e2a4a',fontSize:14,outline:'none'}}/>
         </div>
       ))}
-      {isSbj&&prop.sbjVisible&&<div>
-        <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.1em',textTransform:'uppercase',padding:'10px 0 6px',fontFamily:'var(--mono)',borderTop:'1px solid var(--border)',marginTop:8}}>🏦 SBJ</div>
-        {SBJ_KEYS.map(k=><CheckItem key={k} id={prop.id} ck={k} val={prop.checks[k]??false} memo={prop.warnMemos?.[k]||''} onToggle={togCheck} onMemo={togMemo}/>)}
-      </div>}
-
-      <div style={{display:'flex',justifyContent:'flex-end',gap:8,marginTop:16,borderTop:'1px solid var(--border)',paddingTop:12}}>
-        <button onClick={e=>{e.stopPropagation();onMoveReq(prop.id);}}
-          style={{fontSize:11,color:'var(--gray)',border:'1px solid rgba(255,255,255,.2)',background:'transparent',borderRadius:8,padding:'6px 14px',fontWeight:700}}>
-          📂 移動
-        </button>
-        <button onClick={e=>{e.stopPropagation();onCopyReq(prop.id);}}
-          style={{fontSize:11,color:'var(--gold)',border:'1px solid rgba(232,184,75,.4)',background:'transparent',borderRadius:8,padding:'6px 14px',fontWeight:700}}>
-          📋 コピー
-        </button>
-        <button onClick={e=>{e.stopPropagation();onDeleteReq(prop.id);}}
-          style={{fontSize:11,color:'var(--red)',border:'1px solid rgba(255,87,87,.3)',background:'transparent',borderRadius:8,padding:'6px 14px',fontWeight:700}}>
-          🗑 削除
-        </button>
+      <div style={{padding:'0 16px 12px'}}>
+        <label style={{fontSize:11,fontWeight:700,color:'#c8a94a',letterSpacing:'.06em',marginBottom:8,display:'block'}}>タブ</label>
+        <div style={{display:'flex',gap:6,flexWrap:'wrap'}}>
+          {settings.tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{padding:'6px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===t.key?'#c8a94a':'#dde3f5'}`,background:tab===t.key?'#fef9ec':'transparent',color:tab===t.key?'#92400e':'#8a96b8'}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
       </div>
-    </div>}
-  </div>);
+      <div style={{display:'flex',gap:10,padding:'6px 16px 0'}}>
+        <button onClick={onClose} style={{flex:1,padding:13,borderRadius:12,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:14,fontWeight:700}}>キャンセル</button>
+        <button onClick={submit} style={{flex:2,padding:13,borderRadius:12,border:'none',background:'linear-gradient(135deg,#c8a94a,#e4c96a)',color:'#fff',fontSize:14,fontWeight:900}}>＋ 追加する</button>
+      </div>
+    </Modal>
+  );
 }
 
-function App(){
-  const [props,setProps]=useState(()=>load());
-  const [tab,setTab]=useState('rakuten');
-  const [flt,setFlt]=useState('all');
-  const [showAdd,setShowAdd]=useState(false);
-  const [copyId,setCopyId]=useState(null);
-  const [saved,setSaved]=useState(false);
-  const [deleteId,setDeleteId]=useState(null);
-  const [moveId,setMoveId]=useState(null);
+// ══════════════════════════════════════
+// 設定画面
+// ══════════════════════════════════════
+function SettingsScreen({ settings, onSave, onClose }) {
+  const [d, setD] = useState(() => JSON.parse(JSON.stringify(settings)));
+  const up = patch => setD(prev => ({ ...prev, ...patch }));
 
-  useEffect(()=>{persist(props);setSaved(true);const t=setTimeout(()=>setSaved(false),2000);return()=>clearTimeout(t);},[props]);
+  const addTab    = () => up({ tabs: [...d.tabs, { key: genId(), label: '新しいタブ' }] });
+  const updTab    = (i, label) => { const t=[...d.tabs]; t[i]={...t[i],label}; up({tabs:t}); };
+  const delTab    = (i) => { if(d.tabs.length<=1)return; up({tabs:d.tabs.filter((_,idx)=>idx!==i)}); };
 
-  const upd=useCallback((id,patch)=>setProps(ps=>ps.map(p=>p.id===id?{...p,...patch}:p)),[]);
-  const del=useCallback((id)=>setProps(ps=>ps.filter(p=>p.id!==id)),[]);
-  const add=useCallback(({name,date,buyer,kinshoki,tab:t})=>{
-    setProps(ps=>[...ps,{id:'u_'+Date.now(),name,date,buyer,kinshoki,tab:t,sbjVisible:false,warnMemos:{},checks:{...DC}}]);
-    setTab(t);setShowAdd(false);
-  },[]);
-  const doMove=useCallback((toTab)=>{
-    setProps(ps=>ps.map(p=>p.id===moveId?{...p,tab:toTab}:p));
-    setTab(toTab);
-    setMoveId(null);
-  },[moveId]);
+  const addField  = () => up({ fields: [...d.fields, { key: genId(), label: '新しいフィールド', icon: '📌', width: 80, highlight: false }] });
+  const updField  = (i, patch) => { const f=d.fields.map((x,idx)=>idx===i?{...x,...patch}:x); up({fields:f}); };
+  const delField  = (i) => up({ fields: d.fields.filter((_,idx)=>idx!==i) });
 
-  const doCopy=useCallback((toTab)=>{
-    const src=props.find(p=>p.id===copyId);if(!src)return;
-    setProps(ps=>[...ps,{...JSON.parse(JSON.stringify(src)),id:'u_'+Date.now(),name:src.name+'（コピー）',tab:toTab}]);
-    setTab(toTab);setCopyId(null);
-  },[props,copyId]);
+  const addSec    = () => up({ sections: [...d.sections, { id: genId(), label: '新しいセクション', items: [] }] });
+  const updSec    = (si, label) => { const s=d.sections.map((x,i)=>i===si?{...x,label}:x); up({sections:s}); };
+  const delSec    = (si) => up({ sections: d.sections.filter((_,i)=>i!==si) });
 
-  const visible=useMemo(()=>props.filter(p=>{
-    if(p.tab!==tab)return false;
-    if(flt==='all')return true;
-    const{done,total,hasWarn}=calc(p.checks);
-    if(flt==='done')return done===total;
-    if(flt==='undone')return done!==total;
-    if(flt==='warn')return hasWarn;
+  const addItem   = (si) => { const s=JSON.parse(JSON.stringify(d.sections)); s[si].items.push({key:genId(),label:'新しい項目'}); up({sections:s}); };
+  const updItem   = (si,ii,label) => { const s=JSON.parse(JSON.stringify(d.sections)); s[si].items[ii].label=label; up({sections:s}); };
+  const delItem   = (si,ii) => { const s=JSON.parse(JSON.stringify(d.sections)); s[si].items=s[si].items.filter((_,i)=>i!==ii); up({sections:s}); };
+
+  const addSbj    = () => { const s={...d.sbjSection,items:[...d.sbjSection.items,{key:genId(),label:'新しい項目'}]}; up({sbjSection:s}); };
+  const updSbj    = (ii,label) => { const s=JSON.parse(JSON.stringify(d.sbjSection)); s.items[ii].label=label; up({sbjSection:s}); };
+  const delSbj    = (ii) => { const s=JSON.parse(JSON.stringify(d.sbjSection)); s.items=s.items.filter((_,i)=>i!==ii); up({sbjSection:s}); };
+
+  const iSt = {width:'100%',background:'#f0f4ff',border:'1px solid #c8d2f0',borderRadius:9,padding:'9px 12px',color:'#1e2a4a',fontSize:13,outline:'none'};
+  const lSt = {fontSize:10,fontWeight:700,color:'#c8a94a',letterSpacing:'.07em',marginBottom:5,display:'block',textTransform:'uppercase'};
+  const card = {background:'#fff',border:'1px solid #dde3f5',borderRadius:14,padding:14,marginBottom:12,boxShadow:'0 2px 8px rgba(200,169,74,.07)'};
+  const row  = {display:'flex',alignItems:'center',gap:8,marginBottom:8};
+  const delBtn = (fn) => (
+    <button onClick={fn} style={{flexShrink:0,background:'#fef2f2',border:'1px solid #fca5a5',borderRadius:8,padding:'7px 10px',color:'#ef4444',fontSize:13,fontWeight:700}}>✕</button>
+  );
+  const addBtn = (fn, label, color='#c8a94a') => (
+    <button onClick={fn} style={{width:'100%',padding:9,borderRadius:9,border:`1px dashed ${color}33`,background:`${color}08`,color:color,fontSize:12,fontWeight:700,marginTop:4}}>{label}</button>
+  );
+
+  return (
+    <div style={{minHeight:'100vh',background:'#f0f4ff',paddingBottom:100}}>
+      <div style={{background:'linear-gradient(135deg,#1e2a4a,#2d3e6e)',padding:'16px',position:'sticky',top:0,zIndex:100,display:'flex',alignItems:'center',gap:10,boxShadow:'0 2px 12px rgba(30,42,74,.25)'}}>
+        <button onClick={onClose} style={{background:'rgba(255,255,255,.2)',border:'1px solid rgba(255,255,255,.35)',borderRadius:9,padding:'7px 12px',color:'#fff',fontSize:13,fontWeight:700}}>← 戻る</button>
+        <div style={{flex:1,fontSize:16,fontWeight:900,color:'#fff'}}>⚙️ 設定</div>
+        <button onClick={() => onSave(d)} style={{background:'#c8a94a',border:'none',borderRadius:9,padding:'8px 16px',color:'#fff',fontSize:13,fontWeight:900}}>保存</button>
+      </div>
+
+      <div style={{padding:16}}>
+        <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,letterSpacing:'.05em'}}>📱 基本設定</div>
+        <div style={card}>
+          <label style={lSt}>アプリタイトル</label>
+          <input value={d.appTitle} onChange={e=>up({appTitle:e.target.value})} style={{...iSt,marginBottom:10}}/>
+          <label style={lSt}>管理対象の呼び方</label>
+          <input value={d.itemLabel} onChange={e=>up({itemLabel:e.target.value})} placeholder="物件・案件など" style={iSt}/>
+        </div>
+
+        <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,marginTop:20,letterSpacing:'.05em'}}>🏷 ヘッダーフィールド設定</div>
+        <div style={card}>
+          {d.fields.map((f,i) => (
+            <div key={f.key} style={row}>
+              <input value={f.icon} onChange={e=>updField(i,{icon:e.target.value})}
+                style={{...iSt,width:44,textAlign:'center',padding:'9px 4px',flexShrink:0}}/>
+              <input value={f.label} onChange={e=>updField(i,{label:e.target.value})}
+                style={{...iSt,flex:1}}/>
+              <label style={{display:'flex',alignItems:'center',gap:4,fontSize:11,color:'#8a96b8',flexShrink:0,cursor:'pointer'}}>
+                <input type="checkbox" checked={f.highlight||false} onChange={e=>updField(i,{highlight:e.target.checked})} style={{width:14,height:14}}/>強調
+              </label>
+              {delBtn(()=>delField(i))}
+            </div>
+          ))}
+          {addBtn(addField, '＋ フィールドを追加')}
+        </div>
+
+        <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,marginTop:20,letterSpacing:'.05em'}}>📂 タブ設定</div>
+        <div style={card}>
+          {d.tabs.map((t,i) => (
+            <div key={t.key} style={row}>
+              <input value={t.label} onChange={e=>updTab(i,e.target.value)} style={{...iSt,flex:1}}/>
+              {delBtn(()=>delTab(i))}
+            </div>
+          ))}
+          {addBtn(addTab, '＋ タブを追加')}
+        </div>
+
+        <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,marginTop:20,letterSpacing:'.05em'}}>📋 チェックリスト セクション</div>
+        {d.sections.map((sec,si) => (
+          <div key={sec.id} style={card}>
+            <div style={{...row,marginBottom:10}}>
+              <input value={sec.label} onChange={e=>updSec(si,e.target.value)} style={{...iSt,flex:1,fontWeight:700}}/>
+              {delBtn(()=>delSec(si))}
+            </div>
+            {sec.items.map((item,ii) => (
+              <div key={item.key} style={{...row,paddingLeft:10}}>
+                <div style={{width:3,height:18,background:'#c8a94a',borderRadius:2,flexShrink:0,opacity:.35}}/>
+                <input value={item.label} onChange={e=>updItem(si,ii,e.target.value)} style={{...iSt,flex:1,fontSize:12}}/>
+                {delBtn(()=>delItem(si,ii))}
+              </div>
+            ))}
+            {addBtn(()=>addItem(si), '＋ 項目を追加')}
+          </div>
+        ))}
+        <button onClick={addSec} style={{width:'100%',padding:11,borderRadius:11,border:'1px dashed #c8a94a66',background:'#fef9ec',color:'#92400e',fontSize:13,fontWeight:700,marginBottom:20}}>
+          ＋ セクションを追加
+        </button>
+
+        <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,letterSpacing:'.05em'}}>⭐ 特別セクション</div>
+        <div style={card}>
+
+          <input value={d.sbjSection.label} onChange={e=>up({sbjSection:{...d.sbjSection,label:e.target.value}})} style={{...iSt,marginBottom:10,fontWeight:700}}/>
+          {d.sbjSection.items.map((item,ii) => (
+            <div key={item.key} style={{...row,paddingLeft:10}}>
+              <div style={{width:3,height:18,background:'#6366f1',borderRadius:2,flexShrink:0,opacity:.5}}/>
+              <input value={item.label} onChange={e=>updSbj(ii,e.target.value)} style={{...iSt,flex:1,fontSize:12}}/>
+              {delBtn(()=>delSbj(ii))}
+            </div>
+          ))}
+          {addBtn(addSbj, '＋ 項目を追加', '#6366f1')}
+        </div>
+
+        <button onClick={() => onSave(d)} style={{width:'100%',padding:15,borderRadius:14,border:'none',background:'linear-gradient(135deg,#c8a94a,#e4c96a)',color:'#fff',fontSize:15,fontWeight:900,marginTop:8}}>
+          ✓ 設定を保存する
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
+// Card
+// ══════════════════════════════════════
+function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
+  const [open, setOpen] = useState(false);
+  const { done, total, hasWarn } = calcProgress(prop.checks, settings, prop.sbjVisible);
+  const bc = hasWarn ? '#f97316' : done===total ? '#10b981' : done===0 ? '#fca5a5' : '#c8d2f0';
+
+  const upd = (f, v) => onUpdate(prop.id, { [f]: v });
+  const updCheck = (id, key, next) => onUpdate(id, { checks: { ...prop.checks, [key]: next } });
+  const updMemo  = (id, key, val)  => onUpdate(id, { warnMemos: { ...(prop.warnMemos||{}), [key]: val } });
+
+  return (
+    <div style={{background:'#fff',border:`1.5px solid ${bc}`,borderRadius:16,overflow:'hidden',marginBottom:10,boxShadow:'0 2px 12px rgba(200,169,74,.08)'}}>
+      <div onClick={e => { if(e.target.closest('input')||e.target.closest('button')||e.target.closest('textarea'))return; setOpen(o=>!o); }}
+        style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',background:'#fff'}}>
+        <Ring done={done} total={total}/>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,color:'#1e2a4a'}}>{prop.name||`（${settings.itemLabel}名未設定）`}</div>
+          <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5,alignItems:'center'}}>
+            {settings.sbjSection.enabled && (
+              <span onClick={e=>{e.stopPropagation();onUpdate(prop.id,{sbjVisible:!prop.sbjVisible});}}
+                style={{display:'inline-flex',alignItems:'center',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,cursor:'pointer',userSelect:'none',
+                  background:prop.sbjVisible?'#4f6ef7':'#ffffff',
+                  color:prop.sbjVisible?'#ffffff':'#a0aec0',
+                  border:`1px solid ${prop.sbjVisible?'#4f6ef7':'#c8d2f0'}`,
+                  boxShadow:prop.sbjVisible?'0 2px 8px rgba(79,110,247,0.35)':'none',
+                  transition:'all .2s',gap:3}}>
+                {prop.sbjVisible ? '✅ ON' : '⬜ OFF'}
+              </span>
+            )}
+            {settings.fields.map(f => (
+              <span key={f.key}
+                style={{display:'inline-flex',alignItems:'center',gap:3,
+                  background: f.highlight ? '#fef9ec' : '#f0f4ff',
+                  border: `1px solid ${f.highlight ? '#c8a94a' : '#dde3f5'}`,
+                  borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,
+                  color: f.highlight ? '#92400e' : '#4a5680'}}>
+                {f.icon}
+                <input value={(prop.fields||{})[f.key]||''} onChange={e=>onUpdate(prop.id,{fields:{...(prop.fields||{}),[f.key]:e.target.value}})}
+                  onClick={e=>e.stopPropagation()} placeholder={f.label}
+                  style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
+                    color: f.highlight ? '#92400e' : '#1e2a4a',
+                    width: f.width || 80, padding:0}}/>
+              </span>
+            ))}
+          </div>
+        </div>
+        <div style={{flexShrink:0,fontSize:11,color:'#8a96b8',transition:'transform .3s',transform:open?'rotate(180deg)':'none'}}>▼</div>
+      </div>
+
+      {open && (
+        <div style={{padding:'0 14px 6px',background:'#f7f9ff',borderTop:'1px solid #e8eeff'}}>
+          <div style={{padding:'12px 0 10px',borderBottom:'1px solid #e8eeff'}}>
+            <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',marginBottom:5}}>🏠 {settings.itemLabel}名</div>
+            <input value={prop.name||''} onChange={e=>upd('name',e.target.value)} placeholder={`${settings.itemLabel}名を入力`}
+              style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}/>
+          </div>
+
+          {settings.sections.map((sec,si) => (
+            <div key={sec.id} style={{background:'#fff',borderRadius:10,margin:'10px 0',padding:'2px 10px',border:'1px solid #e8eeff'}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',letterSpacing:'.07em',padding:'9px 0 5px'}}>{sec.label}</div>
+              {sec.items.map(item => (
+                <CheckItem key={item.key} propId={prop.id} item={item}
+                  value={prop.checks[item.key]??false}
+                  warnMemo={(prop.warnMemos||{})[item.key]||''}
+                  onToggle={updCheck} onWarnMemo={updMemo}/>
+              ))}
+            </div>
+          ))}
+
+          {settings.sbjSection.enabled && prop.sbjVisible && (
+            <div style={{background:'#fef9ec',borderRadius:10,margin:'10px 0',padding:'2px 10px',border:'1px solid #c8a94a44'}}>
+              <div style={{fontSize:10,fontWeight:700,color:'#92400e',letterSpacing:'.07em',padding:'9px 0 5px'}}>{settings.sbjSection.label}</div>
+              {settings.sbjSection.items.map(item => (
+                <CheckItem key={item.key} propId={prop.id} item={item}
+                  value={prop.checks[item.key]??false}
+                  warnMemo={(prop.warnMemos||{})[item.key]||''}
+                  onToggle={updCheck} onWarnMemo={updMemo}/>
+              ))}
+            </div>
+          )}
+
+          <div style={{display:'flex',justifyContent:'flex-end',gap:8,padding:'10px 0 12px'}}>
+            <button onClick={e=>{e.stopPropagation();onMoveReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:12,fontWeight:700}}>📂 移動</button>
+            <button onClick={e=>{e.stopPropagation();onCopyReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fcd34d',background:'#fef9ec',color:'#92400e',fontSize:12,fontWeight:700}}>📋 コピー</button>
+            <button onClick={e=>{e.stopPropagation();onDeleteReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fca5a5',background:'#fef2f2',color:'#ef4444',fontSize:12,fontWeight:700}}>🗑 削除</button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════
+// App
+// ══════════════════════════════════════
+function App() {
+  const [settings, setSettings] = useState(loadSettings);
+  const [props,    setProps]    = useState([]);
+  const [tab,      setTab]      = useState(() => loadSettings().tabs[0]?.key || '');
+  const [filter,   setFilter]   = useState('all');
+  const [screen,   setScreen]   = useState('main');
+  const [saved,    setSaved]    = useState(false);
+  const [loading,  setLoading]  = useState(true);
+  const [showAdd,  setShowAdd]  = useState(false);
+  const [deleteId, setDeleteId] = useState(null);
+  const [copyId,   setCopyId]   = useState(null);
+  const [moveId,   setMoveId]   = useState(null);
+
+  // 初回ロード
+  useEffect(() => {
+    loadPropsFromDB().then(data => { setProps(data); setLoading(false); });
+  }, []);
+
+  // リアルタイム同期
+  useEffect(() => {
+    const channel = supabase.channel('axia_buken_realtime')
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, () => {
+        loadPropsFromDB().then(data => setProps(data));
+      }).subscribe();
+    return () => supabase.removeChannel(channel);
+  }, []);
+
+  useEffect(() => { saveSettings(settings); }, [settings]);
+
+  const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
+
+  const handleSaveSettings = useCallback(draft => {
+    setSettings(draft);
+    if (!draft.tabs.find(t => t.key === tab)) setTab(draft.tabs[0]?.key || '');
+    setScreen('main');
+  }, [tab]);
+
+  const upd = useCallback((id, patch) => {
+    setProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p));
+    updatePropInDB(id, patch).then(showSaved);
+  }, []);
+
+  const del = useCallback(id => {
+    setProps(ps => ps.filter(p => p.id !== id));
+    deletePropFromDB(id).then(showSaved);
+  }, []);
+
+  const addProp = useCallback(async ({ name, fields, tab: t }) => {
+    const tempId = genId();
+    const newProp = { id:tempId, name, fields, tab:t, sbjVisible:false, warnMemos:{}, checks:makeChecks(settings) };
+    setProps(ps => [...ps, newProp]);
+    const realId = await addPropToDB(newProp);
+    setProps(ps => ps.map(p => p.id===tempId ? {...p, id:realId} : p));
+    setTab(t); setShowAdd(false); showSaved();
+  }, [settings]);
+
+  const doCopy = useCallback(async toTab => {
+    const src = props.find(p => p.id===copyId); if (!src) return;
+    const copy = { ...JSON.parse(JSON.stringify(src)), id:genId(), name:src.name+'（コピー）', tab:toTab };
+    setProps(ps => [...ps, copy]);
+    const realId = await addPropToDB(copy);
+    setProps(ps => ps.map(p => p.id===copy.id ? {...p, id:realId} : p));
+    setTab(toTab); setCopyId(null); showSaved();
+  }, [props, copyId]);
+
+  const doMove = useCallback(toTab => {
+    setProps(ps => ps.map(p => p.id===moveId ? {...p, tab:toTab} : p));
+    updatePropInDB(moveId, { tab: toTab }).then(showSaved);
+    setTab(toTab); setMoveId(null);
+  }, [moveId]);
+
+  const visible = useMemo(() => props.filter(p => {
+    if (p.tab !== tab) return false;
+    if (filter === 'all') return true;
+    const { done, total, hasWarn } = calcProgress(p.checks, settings, p.sbjVisible);
+    if (filter==='done')   return done===total;
+    if (filter==='undone') return done!==total;
+    if (filter==='warn')   return hasWarn;
     return true;
-  }),[props,tab,flt]);
+  }), [props, tab, filter, settings]);
 
-  const st=useMemo(()=>{let done=0,warn=0,active=0;props.forEach(p=>{const{done:d,total:t,hasWarn}=calc(p.checks);if(hasWarn)warn++;else if(d===t)done++;else active++;});return{total:props.length,done,warn,active};},[props]);
+  const stats = useMemo(() => {
+    let done=0, warn=0, active=0;
+    props.forEach(p => {
+      const { done:d, total:t, hasWarn } = calcProgress(p.checks, settings, p.sbjVisible);
+      if (hasWarn) warn++; else if (d===t) done++; else active++;
+    });
+    return { total: props.length, done, warn, active };
+  }, [props, settings]);
 
-  return(<div>
-    <div style={{background:'linear-gradient(135deg,#0d1b2a,#1a2e45)',borderBottom:'1px solid var(--border)',padding:'16px 16px 12px',position:'sticky',top:0,zIndex:100}}>
-      <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
-        <div>
-          <div style={{fontSize:10,fontWeight:700,color:'var(--gold)',letterSpacing:'.12em',fontFamily:'var(--mono)'}}>AXIA JAPAN</div>
-          <div style={{fontSize:17,fontWeight:900}}>物件TODOリスト</div>
-        </div>
-        <div style={{background:'rgba(46,204,122,.12)',border:'1px solid #2ecc7a',color:'#2ecc7a',fontSize:10,padding:'3px 8px',borderRadius:20,fontWeight:700,fontFamily:'var(--mono)',opacity:saved?1:0,transition:'opacity .4s'}}>✓ 保存済み</div>
+  if (screen === 'settings') {
+    return <SettingsScreen settings={settings} onSave={handleSaveSettings} onClose={() => setScreen('main')}/>;
+  }
+
+  if (loading) {
+    return (
+      <div style={{minHeight:'100vh',display:'flex',flexDirection:'column',alignItems:'center',justifyContent:'center',background:'#f0f4ff',gap:16}}>
+        <div style={{width:48,height:48,border:'4px solid #e8eeff',borderTop:'4px solid #c8a94a',borderRadius:'50%',animation:'spin 1s linear infinite'}}/>
+        <div style={{fontSize:14,color:'#8a96b8',fontWeight:600}}>データを読み込み中...</div>
+        <style>{`@keyframes spin{to{transform:rotate(360deg)}}`}</style>
       </div>
-      <div style={{display:'flex',gap:6,overflowX:'auto'}}>
-        {TABS.map(t=>(
-          <button key={t.key} onClick={()=>setTab(t.key)}
-            style={{flexShrink:0,padding:'7px 14px',borderRadius:20,fontSize:12,fontWeight:700,border:`1px solid ${tab===t.key?'var(--gold)':'rgba(255,255,255,.1)'}`,background:tab===t.key?'var(--gold)':'rgba(255,255,255,.04)',color:tab===t.key?'var(--navy)':'var(--gray)',whiteSpace:'nowrap'}}>
-            {t.label}
+    );
+  }
+
+  return (
+    <div style={{background:'#f0f4ff',minHeight:'100vh'}}>
+      {/* ヘッダー */}
+      <div style={{background:'linear-gradient(135deg,#1e2a4a,#2d3e6e)',padding:'16px 16px 12px',position:'sticky',top:0,zIndex:100,boxShadow:'0 2px 16px rgba(30,42,74,.35)'}}>
+        <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
+          <div>
+            <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',letterSpacing:'.12em'}}>AXIA JAPAN</div>
+            <div style={{fontSize:17,fontWeight:900,color:'#fff'}}>{settings.appTitle}</div>
+          </div>
+          <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <div style={{background:'rgba(200,169,74,.3)',border:'1px solid rgba(200,169,74,.5)',color:'#e4c96a',fontSize:10,padding:'3px 8px',borderRadius:20,fontWeight:700,opacity:saved?1:0,transition:'opacity .4s'}}>✓ 保存済み</div>
+            <button onClick={() => setScreen('settings')}
+              style={{background:'rgba(255,255,255,.1)',border:'1px solid rgba(255,255,255,.25)',borderRadius:9,padding:'6px 10px',color:'#fff',fontSize:13,fontWeight:700}}>⚙️</button>
+          </div>
+        </div>
+        <div style={{display:'flex',gap:6,overflowX:'auto'}}>
+          {settings.tabs.map(t => (
+            <button key={t.key} onClick={() => setTab(t.key)}
+              style={{flexShrink:0,padding:'7px 14px',borderRadius:20,fontSize:12,fontWeight:700,whiteSpace:'nowrap',
+                border:`1px solid ${tab===t.key?'#c8a94a':'rgba(255,255,255,.2)'}`,
+                background:tab===t.key?'#c8a94a':'rgba(255,255,255,.08)',
+                color:tab===t.key?'#fff':'rgba(255,255,255,.8)'}}>
+              {t.label}
+            </button>
+          ))}
+        </div>
+      </div>
+
+      {/* 統計バー */}
+      <div style={{display:'flex',gap:8,padding:'10px 14px',background:'#fff',borderBottom:'1px solid #e8eeff',overflowX:'auto'}}>
+        {[{n:stats.total,l:'全件',c:'#1e2a4a'},{n:stats.done,l:'完了',c:'#10b981'},{n:stats.warn,l:'要確認',c:'#f97316'},{n:stats.active,l:'対応中',c:'#ef4444'}].map(({n,l,c})=>(
+          <div key={l} style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,background:'#f7f9ff',border:`1.5px solid ${c}22`,borderRadius:10,padding:'6px 12px'}}>
+            <div style={{fontSize:20,fontWeight:900,color:c,fontFamily:'DM Mono,monospace'}}>{n}</div>
+            <div style={{fontSize:10,color:'#8a96b8',fontWeight:600}}>{l}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* フィルター */}
+      <div style={{display:'flex',gap:6,padding:'8px 12px',background:'#fff',borderBottom:'1px solid #e8eeff',overflowX:'auto'}}>
+        {[['all','すべて'],['undone','🔴 未対応あり'],['done','🟢 完了'],['warn','⚠️ 要確認']].map(([k,l])=>(
+          <button key={k} onClick={() => setFilter(k)}
+            style={{flexShrink:0,padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,
+              border:`1px solid ${filter===k?'#c8a94a':'#dde3f5'}`,
+              background:filter===k?'#fef9ec':'transparent',
+              color:filter===k?'#92400e':'#8a96b8'}}>
+            {l}
           </button>
         ))}
       </div>
+
+      {/* カードリスト */}
+      <div style={{padding:'10px 12px 0'}}>
+        {visible.length === 0
+          ? <div style={{textAlign:'center',padding:'60px 20px',color:'#8a96b8',fontSize:14}}>
+              <div style={{fontSize:40,marginBottom:12}}>🏠</div>
+              該当する{settings.itemLabel}がありません
+            </div>
+          : visible.map(p => (
+              <Card key={p.id} prop={p} settings={settings}
+                onUpdate={upd} onDeleteReq={id=>setDeleteId(id)}
+                onCopyReq={id=>setCopyId(id)} onMoveReq={id=>setMoveId(id)}/>
+            ))
+        }
+      </div>
+
+      {/* FAB */}
+      <button onClick={() => setShowAdd(true)}
+        style={{position:'fixed',bottom:24,right:20,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,#c8a94a,#e4c96a)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:'0 4px 20px rgba(200,169,74,.5)',zIndex:200,border:'none',color:'#fff'}}>
+        ＋
+      </button>
+
+      {showAdd   && <AddPropModal settings={settings} defaultTab={tab} onAdd={addProp} onClose={()=>setShowAdd(false)}/>}
+      {moveId    && <MoveModal   prop={props.find(p=>p.id===moveId)||null}  settings={settings} onMove={doMove}  onClose={()=>setMoveId(null)}/>}
+      {copyId    && <CopyModal   prop={props.find(p=>p.id===copyId)||null}  settings={settings} onCopy={doCopy}  onClose={()=>setCopyId(null)}/>}
+      {deleteId  && <DeleteConfirm prop={props.find(p=>p.id===deleteId)||null} onConfirm={()=>{del(deleteId);setDeleteId(null);}} onClose={()=>setDeleteId(null)}/>}
     </div>
-
-    <div style={{display:'flex',gap:10,padding:'12px 16px',borderBottom:'1px solid var(--border)',overflowX:'auto'}}>
-      {[{n:st.total,l:'全物件',c:'var(--gold)'},{n:st.done,l:'完了',c:'#2ecc7a'},{n:st.warn,l:'要確認',c:'#ffb347'},{n:st.active,l:'対応中',c:'#ff5757'}].map(({n,l,c})=>(
-        <div key={l} style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,background:'var(--card-bg)',border:'1px solid var(--border)',borderRadius:10,padding:'7px 12px'}}>
-          <div style={{fontSize:20,fontWeight:900,fontFamily:'var(--mono)',color:c}}>{n}</div>
-          <div style={{fontSize:10,color:'var(--gray)',fontWeight:500,lineHeight:1.2}}>{l}</div>
-        </div>
-      ))}
-    </div>
-
-    <div style={{display:'flex',gap:6,padding:'10px 12px 0',overflowX:'auto'}}>
-      {[['all','すべて'],['undone','🔴 未対応あり'],['done','🟢 完了'],['warn','⚠️ 要確認']].map(([k,l])=>(
-        <button key={k} onClick={()=>setFlt(k)}
-          style={{flexShrink:0,padding:'5px 12px',borderRadius:20,fontSize:11,fontWeight:700,border:`1px solid ${flt===k?'var(--gold)':'rgba(255,255,255,.12)'}`,background:flt===k?'var(--navy2)':'transparent',color:flt===k?'var(--gold)':'var(--gray)'}}>
-          {l}
-        </button>
-      ))}
-    </div>
-
-    <div style={{padding:'12px 12px 0'}}>
-      {visible.length===0
-        ?<div style={{textAlign:'center',padding:'60px 20px',color:'var(--gray)',fontSize:14}}>該当する物件がありません</div>
-        :visible.map(p=><Card key={p.id} prop={p} onUpdate={upd} onDelete={del} onDeleteReq={id=>setDeleteId(id)} onCopyReq={id=>setCopyId(id)} onMoveReq={id=>setMoveId(id)}/>)
-      }
-    </div>
-
-    <button onClick={()=>setShowAdd(true)} style={{position:'fixed',bottom:24,right:20,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,var(--gold),var(--gold2))',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:'0 4px 20px rgba(232,184,75,.4)',zIndex:200,border:'none',color:'var(--navy)'}}>＋</button>
-
-    {showAdd&&<AddModal defaultTab={tab} onAdd={add} onClose={()=>setShowAdd(false)}/>}
-    {moveId&&<MoveModal prop={props.find(p=>p.id===moveId)||null} onMove={doMove} onClose={()=>setMoveId(null)}/>}
-    {copyId&&<CopyModal prop={props.find(p=>p.id===copyId)||null} onCopy={doCopy} onClose={()=>setCopyId(null)}/>}
-    {deleteId&&<DeleteConfirm
-      prop={props.find(p=>p.id===deleteId)||null}
-      onConfirm={()=>{del(deleteId);setDeleteId(null);}}
-      onClose={()=>setDeleteId(null)}/>}
-  </div>);
+  );
 }
 
 ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
-
 </script>
 </body>
 </html>
