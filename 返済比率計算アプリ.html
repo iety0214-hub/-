@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang"ja">
+<html lang="ja">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
@@ -10,6 +10,7 @@
 <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
+html{zoom:1.3}
 html,body{height:100%;overflow:hidden}
 body{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif;background:#f5f7fb;color:#1e293b}
 #root{height:100%;display:flex;flex-direction:column}
@@ -133,9 +134,10 @@ function NumInput({value,onChange,unit}){
   const onFocus=()=>{setFocused(true);setLocal(toComma(value))};
   const onBlur=()=>{setFocused(false);onChange(fromComma(local))};
   const onCh=e=>{const raw=e.target.value.replace(/[^0-9,.\-]/g,'');const nums=fromComma(raw);setLocal(toComma(nums));onChange(nums)};
+  const uW=unit?Math.max(36,unit.length*14+12):10;
   return <div style={{position:'relative'}}>
     <input type="text" inputMode="decimal" value={displayed} onFocus={onFocus} onBlur={onBlur}
-      onChange={onCh} style={{...sInput,paddingRight:unit?32:10,textAlign:'right'}}/>
+      onChange={onCh} style={{...sInput,paddingRight:uW,textAlign:'right'}}/>
     {unit&&<span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',fontSize:11,color:C.sub,pointerEvents:'none'}}>{unit}</span>}
   </div>
 }
