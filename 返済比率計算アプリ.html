@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no">
+<title>返済比率計算シート - AXIA JAPAN</title>
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;600;700;900&family=DM+Mono:wght@400;500&display=swap" rel="stylesheet">
+<script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+<script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%;overflow:hidden}
+body{font-family:'Noto Sans JP','Hiragino Kaku Gothic ProN',sans-serif;background:#f5f7fb;color:#1e293b}
+#root{height:100%;display:flex;flex-direction:column}
+::-webkit-scrollbar{width:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:#c5cde0;border-radius:4px}
+input[type=number]::-webkit-inner-spin-button,input[type=number]::-webkit-outer-spin-button{-webkit-appearance:none;margin:0}
+input[type=number]{-moz-appearance:textfield}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script type="text/babel">
+const {useState,useMemo}=React;
+
+const PR={
+"北海道":10.29,"青森県":9.79,"岩手県":9.77,"宮城県":10.05,"秋田県":9.86,
+"山形県":9.98,"福島県":9.53,"茨城県":9.73,"栃木県":9.96,"群馬県":9.76,
+"埼玉県":9.82,"千葉県":9.87,"東京都":10.00,"神奈川県":10.02,"新潟県":9.33,
+"富山県":9.57,"石川県":9.66,"福井県":9.91,"山梨県":9.67,"長野県":9.49,
+"岐阜県":9.80,"静岡県":9.75,"愛知県":10.01,"三重県":9.81,"滋賀県":9.73,
+"京都府":10.09,"大阪府":10.29,"兵庫県":10.17,"奈良県":10.14,"和歌山県":9.94,
+"鳥取県":9.82,"島根県":10.26,"岡山県":10.07,"広島県":9.92,"山口県":9.96,
+"徳島県":10.25,"香川県":10.23,"愛媛県":10.01,"高知県":10.10,"福岡県":10.36,
+"佐賀県":10.51,"長崎県":10.21,"熊本県":10.32,"大分県":10.20,"宮崎県":9.76,
+"鹿児島県":10.26,"沖縄県":9.89
+};
+const PREFS=Object.keys(PR);
+
+const STD=[
+[58000,0,63000],[68000,63000,73000],[78000,73000,83000],[88000,83000,93000],
+[98000,93000,101000],[104000,101000,107000],[110000,107000,114000],[118000,114000,122000],
+[126000,122000,130000],[134000,130000,138000],[142000,138000,146000],[150000,146000,155000],
+[160000,155000,165000],[170000,165000,175000],[180000,175000,185000],[190000,185000,195000],
+[200000,195000,210000],[220000,210000,230000],[240000,230000,250000],[260000,250000,270000],
+[280000,270000,290000],[300000,290000,310000],[320000,310000,330000],[340000,330000,350000],
+[360000,350000,370000],[380000,370000,395000],[410000,395000,425000],[440000,425000,455000],
+[470000,455000,485000],[500000,485000,515000],[530000,515000,545000],[560000,545000,575000],
+[590000,575000,605000],[620000,605000,635000],[650000,635000,665000],[680000,665000,695000],
+[710000,695000,730000],[750000,730000,770000],[790000,770000,810000],[830000,810000,855000],
+[880000,855000,905000],[930000,905000,955000],[980000,955000,1005000],[1030000,1005000,1055000],
+[1090000,1055000,1115000],[1150000,1115000,1175000],[1210000,1175000,1235000],
+[1270000,1235000,1295000],[1330000,1295000,1355000],[1390000,1355000,Infinity]
+];
+
+function getStdM(m){for(const[s,lo,hi]of STD){if(hi===Infinity){if(m>=lo)return s}else if(lo===0){if(m<hi)return s}else{if(m>=lo&&m<hi)return s}}return 58000}
+function PMT(r,n,pv){if(r===0)return -pv/n;const x=Math.pow(1+r,n);return(pv*r*x)/(x-1)}
+
+function calcSalaryIncome(s){
+  if(!s||s<=0)return 0;
+  if(s<=550999)return 0;if(s<=1618999)return s-550000;
+  if(s<=1619999)return 1069000;if(s<=1621999)return 1070000;
+  if(s<=1623999)return 1072000;if(s<=1627999)return 1074000;
+  const b=Math.floor(s/4/1000)*1000;
+  if(s<=1799999)return b*2.4+100000;if(s<=3599999)return b*2.8-80000;
+  if(s<=6599999)return b*3.2-440000;if(s<=8499999)return Math.floor(s*0.9)-1100000;
+  return s-1950000;
+}
+
+function calcIns(s,a,pref){
+  const m=s/12,stdH=getStdM(m),stdP=Math.min(getStdM(m),650000);
+  const hr=(PR[pref]||10)/100;
+  const health=Math.round(stdH*hr/2-0.001);
+  const care=(a>=40&&a<65)?Math.round(stdH*0.0182/2-0.001):0;
+  const pen=Math.round(stdP*0.183/2-0.001);
+  const emp=(a<65)?Math.round(m*0.006-0.001):0;
+  return(health+care+pen+emp)*12;
+}
+
+function calcTax(s,si){
+  const inc=calcSalaryIncome(s);
+  const tb=Math.max(Math.floor((inc-si-480000)/1000)*1000,0);
+  let it;
+  if(tb<1950000)it=tb*0.05;else if(tb<3300000)it=tb*0.10-97500;
+  else if(tb<6950000)it=tb*0.20-427500;else if(tb<9000000)it=tb*0.23-636000;
+  else if(tb<18000000)it=tb*0.33-1536000;else it=tb*0.40-2796000;
+  const rc=Math.floor(it*0.021);
+  const total=Math.floor((rc+it)/100)*100;
+  const res=tb*0.10;
+  return{incomeTax:total,residentTax:res,total:total+res};
+}
+
+const fmt=n=>n!=null&&!isNaN(n)?Math.round(n).toLocaleString():"—";
+const fmtP=n=>n!=null&&!isNaN(n)?(n*100).toFixed(2)+"%":"—";
+const fmtR=n=>n!=null&&!isNaN(n)?n.toFixed(2):"—";
+
+const C={
+  bg:'#f5f7fb',card:'#ffffff',border:'#e2e8f0',
+  blue:'#2563eb',blueLight:'#eff4ff',
+  text:'#1e293b',sub:'#94a3b8',label:'#475569',
+  green:'#16a34a',greenBg:'rgba(22,163,74,0.08)',greenBd:'rgba(22,163,74,0.25)',
+  red:'#dc2626',redBg:'rgba(220,38,38,0.08)',redBd:'rgba(220,38,38,0.25)',
+  inputBg:'#f8fafc',inputBd:'#cbd5e1',
+  headerBg:'linear-gradient(135deg,#2563eb,#4f46e5)'
+};
+
+const sCard={background:C.card,border:`1px solid ${C.border}`,borderRadius:14,padding:16,marginBottom:14,boxShadow:'0 1px 3px rgba(0,0,0,0.04)'};
+const sInput={width:'100%',padding:'9px 10px',background:C.inputBg,border:`1px solid ${C.inputBd}`,borderRadius:8,color:C.text,fontSize:14,outline:'none'};
+const sLabel={display:'block',fontSize:11,color:C.label,marginBottom:4,fontWeight:600};
+
+function Badge({pass}){
+  return <span style={{display:'inline-block',padding:'3px 10px',borderRadius:20,fontSize:11,fontWeight:700,
+    background:pass?C.greenBg:C.redBg,color:pass?C.green:C.red,border:`1px solid ${pass?C.greenBd:C.redBd}`}}>
+    {pass?"基準クリア":"基準オーバー"}
+  </span>
+}
+function RRow({label,value,sub}){
+  return <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',padding:'7px 0',borderBottom:'1px solid #f1f5f9'}}>
+    <span style={{fontSize:12,color:C.label}}>{label}</span>
+    <span style={{fontSize:13,fontWeight:600,color:C.text,textAlign:'right'}}>{value}{sub&&<span style={{fontSize:10,color:C.sub,marginLeft:4}}>{sub}</span>}</span>
+  </div>
+}
+function Divider(){return <div style={{height:1,background:C.border,margin:'8px 0'}}/>}
+
+function toComma(v){const s=String(v).replace(/[^0-9.\-]/g,'');if(!s||s==='-')return s;const parts=s.split('.');const intPart=parts[0].replace(/\B(?=(\d{3})+(?!\d))/g,',');return parts.length>1?intPart+'.'+parts[1]:intPart}
+function fromComma(v){return String(v).replace(/,/g,'')}
+function NumInput({value,onChange,unit}){
+  const [focused,setFocused]=useState(false);
+  const [local,setLocal]=useState('');
+  const displayed=focused?local:toComma(value);
+  const onFocus=()=>{setFocused(true);setLocal(toComma(value))};
+  const onBlur=()=>{setFocused(false);onChange(fromComma(local))};
+  const onCh=e=>{const raw=e.target.value.replace(/[^0-9,.\-]/g,'');const nums=fromComma(raw);setLocal(toComma(nums));onChange(nums)};
+  return <div style={{position:'relative'}}>
+    <input type="text" inputMode="decimal" value={displayed} onFocus={onFocus} onBlur={onBlur}
+      onChange={onCh} style={{...sInput,paddingRight:unit?32:10,textAlign:'right'}}/>
+    {unit&&<span style={{position:'absolute',right:10,top:'50%',transform:'translateY(-50%)',fontSize:11,color:C.sub,pointerEvents:'none'}}>{unit}</span>}
+  </div>
+}
+function Field({label,value,onChange,unit,children}){
+  return <div style={{marginBottom:10}}>
+    <label style={sLabel}>{label}</label>
+    {children||<NumInput value={value} onChange={onChange} unit={unit}/>}
+  </div>
+}
+
+function App(){
+  const [salary,setSalary]=useState(6100000);
+  const [age,setAge]=useState(26);
+  const [years,setYears]=useState(3);
+  const [members,setMembers]=useState(1);
+  const [pref,setPref]=useState("千葉県");
+  const [owned,setOwned]=useState([{payment:0,rent:0,mgmt:0}]);
+  const [others,setOthers]=useState([{payment:0}]);
+  const [homeRent,setHomeRent]=useState(30000);
+  const [props,setProps]=useState([{price:30000000,bonus:0,rent:80000,mgmt:0}]);
+  const [calcRate,setCalcRate]=useState(4.0);
+  const [tab,setTab]=useState("input");
+
+  const uOwn=(i,k,v)=>setOwned(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const uOth=(i,k,v)=>setOthers(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const uProp=(i,k,v)=>setProps(p=>p.map((x,j)=>j===i?{...x,[k]:v}:x));
+  const adjSalary=(d)=>setSalary(prev=>Math.max(0,(Number(prev)||0)+d));
+
+  const calc=useMemo(()=>{
+    const s=Number(salary)||0,a=Number(age)||0,yrs=Number(years)||0,mem=Number(members)||1;
+    const rate=(Number(calcRate)||4)/100;
+
+    const existPayY=owned.reduce((t,o)=>t+(Number(o.payment)||0)*12,0);
+    const existRentY=owned.reduce((t,o)=>t+(Number(o.rent)||0)*12,0);
+    const existMgmtY=owned.reduce((t,o)=>t+(Number(o.mgmt)||0)*12,0);
+    const otherPayY=others.reduce((t,o)=>t+(Number(o.payment)||0)*12,0);
+    const homeRentY=(Number(homeRent)||0)*12;
+    const existTotalY=existPayY+otherPayY+homeRentY;
+
+    const pc=props.map(p=>{
+      const price=Number(p.price)||0;
+      const mp=price>0?PMT(rate/12,35*12,price):0;
+      const yp=mp*12;const bonus=Number(p.bonus)||0;
+      const rent=Number(p.rent)||0;const mgmt=Number(p.mgmt)||0;
+      return{price,mp,yp,bonus,rent,mgmt};
+    });
+    const propYearlyTotal=pc.reduce((t,p)=>t+p.yp+p.bonus*2,0);
+    const propRentTotal=pc.reduce((t,p)=>t+p.rent,0)*12;
+    const propMgmtTotal=pc.reduce((t,p)=>t+p.mgmt,0)*12;
+    const propPriceTotal=pc.reduce((t,p)=>t+p.price,0);
+
+    const totalAP=existTotalY+propYearlyTotal;
+    const totalRent=existRentY+propRentTotal;
+    const totalDebt=propPriceTotal;
+
+    const ratioNet=s>0?totalAP/s:0;
+    const ratio70=(s+totalRent*0.7)>0?totalAP/(s+totalRent*0.7):0;
+    const ratio100=(s+totalRent)>0?totalAP/(s+totalRent):0;
+    const yrMult=s>0?totalDebt/s:0;
+
+    const si=calcIns(s,a,pref);
+    const tax=calcTax(s,si);
+
+    const rkDebtH=totalDebt*0.5;
+    const rkRepay=-PMT(0.03127/12,300,rkDebtH)*12;
+    const rkB=s*0.7-2000000;
+    const rkC=rkB-homeRentY;
+    const rkD=rkC-otherPayY;
+    const rkMargin=rkD-rkRepay;
+
+    const sbjR=0.01975;
+    const sbjPY=pc.reduce((t,p)=>{return t+(p.price>0?PMT(sbjR/12,35*12,p.price)*12:0)},0);
+    const sbjPWB=sbjPY+pc.reduce((t,p)=>t+p.bonus*2,0);
+    const sbjTotalRepay=sbjPWB+existPayY+otherPayY;
+    const sbjYM=s>0?totalDebt/s:99;
+    const sbjA1=s+existRentY*0.7+propRentTotal*0.7-si-tax.total;
+    const sbjB=sbjTotalRepay+homeRentY;
+    const sbjRatio=sbjA1>0?sbjB/sbjA1:99;
+    const sbjFam=960000*mem;
+    const sbjDisp=sbjA1-(sbjB+sbjFam);
+
+    const ionR1=s>0?totalAP/s:99;
+    const ionR2=(s+totalRent)>0?totalAP/(s+totalRent):99;
+    const ionBM=s<=7000000?7:s<=8500000?9:s<=10000000?11:12;
+    const ionDisp=(s-si-tax.total)-(homeRentY+3360000+homeRentY);
+
+    const sbiRatio=(s+totalRent)>0?totalAP/(s+totalRent):99;
+    const sbiBR=0.4;const sbiBM=s<=10000000?10:12;
+    const sbiRate2=s<=5000000?0.022:s<=10000000?0.018:0.016;
+
+    const hPR=pc[0]?-PMT(0.035/12,35*12,pc[0].price)*12:0;
+    const hTR=hPR+existTotalY;
+    const hS35=s*0.35;
+    const hR70=(propRentTotal-propMgmtTotal)*0.7;
+    const hMargin=(hS35+hR70)-hTR;
+
+    return{
+      pc,propYearlyTotal,propRentTotal,propPriceTotal,
+      existTotalY,totalAP,totalRent,totalDebt,
+      ratioNet,ratio70,ratio100,yrMult,si,tax,
+      rk:{repay:rkRepay,b:rkB,c:rkC,d:rkD,margin:rkMargin,pass:rkMargin>0},
+      sbj:{ym:sbjYM,mPass:sbjYM<10,a1:sbjA1,b:sbjB,ratio:sbjRatio,disp:sbjDisp,dPass:sbjDisp>=1000000,pass:sbjYM<10&&sbjDisp>=1000000},
+      ion:{r1:ionR1,r2:ionR2,bm:ionBM,disp:ionDisp,rPass:ionR1<0.5&&ionR2<0.35,mPass:yrMult<ionBM,dPass:ionDisp>100000,pass:ionR1<0.5&&ionR2<0.35&&yrMult<ionBM&&a>=25&&yrs>=2},
+      sbi:{ratio:sbiRatio,br:sbiBR,bm:sbiBM,rate:sbiRate2,pass:sbiRatio<sbiBR&&yrMult<sbiBM&&a>=25&&yrs>=3},
+      hig:{pr:hPR,tr:hTR,s35:hS35,r70:hR70,margin:hMargin,pass:hMargin>0}
+    };
+  },[salary,age,years,members,pref,owned,others,homeRent,props,calcRate]);
+
+  const banks=[
+    {key:"rk",label:"楽天",pass:calc.rk.pass},
+    {key:"sbj",label:"SBJ",pass:calc.sbj.pass},
+    {key:"ion",label:"イオン",pass:calc.ion.pass},
+    {key:"sbi",label:"SBI",pass:calc.sbi.pass},
+    {key:"hig",label:"東日本",pass:calc.hig.pass},
+  ];
+
+  const tabS=(a)=>({flex:1,minWidth:48,padding:'10px 2px',textAlign:'center',fontSize:11,fontWeight:a?700:500,color:a?C.blue:'#94a3b8',background:a?C.blueLight:'transparent',border:'none',borderBottom:a?`2px solid ${C.blue}`:'2px solid transparent',cursor:'pointer',whiteSpace:'nowrap'});
+  const addBtn=(t,fn)=><button onClick={fn} style={{background:'none',border:'1px dashed #cbd5e1',color:'#94a3b8',padding:8,borderRadius:8,width:'100%',cursor:'pointer',fontSize:12,marginTop:8}}>{t}</button>;
+  const rmBtn=(fn)=><button onClick={fn} style={{background:'none',border:'none',color:C.red,cursor:'pointer',fontSize:18,padding:'0 4px',lineHeight:1}}>×</button>;
+  const backBtn=<button onClick={()=>setTab("summary")} style={{background:'none',border:`1px solid ${C.border}`,color:C.label,padding:'5px 12px',borderRadius:6,fontSize:11,cursor:'pointer'}}>← 戻る</button>;
+
+  return <div style={{display:'flex',flexDirection:'column',height:'100%',background:C.bg}}>
+    <div style={{background:C.headerBg,padding:'18px 16px 14px',textAlign:'center',flexShrink:0}}>
+      <div style={{fontSize:17,fontWeight:900,color:'#fff',letterSpacing:1}}>返済比率計算シート</div>
+      <div style={{fontSize:10,color:'rgba(255,255,255,0.7)',marginTop:2,fontFamily:'DM Mono'}}>AXIA JAPAN ─ 融資審査シミュレーター</div>
+    </div>
+
+    <div style={{display:'flex',background:'#fff',borderBottom:`1px solid ${C.border}`,overflowX:'auto',flexShrink:0}}>
+      <button style={tabS(tab==="input")} onClick={()=>setTab("input")}>📝 入力</button>
+      <button style={tabS(tab==="summary")} onClick={()=>setTab("summary")}>📊 結果</button>
+      {banks.map(b=><button key={b.key} style={tabS(tab===b.key)} onClick={()=>setTab(b.key)}>
+        <span style={{display:'inline-block',width:8,height:8,borderRadius:4,background:b.pass?C.green:C.red,marginRight:4,verticalAlign:'middle'}}/>
+        {b.label}
+      </button>)}
+    </div>
+
+    <div style={{flex:1,overflowY:'auto',padding:14}}>
+      <div style={{maxWidth:560,margin:'0 auto'}}>
+
+      {tab==="input"&&<>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:12}}>👤 お客様情報</div>
+          <Field label="年収" value={salary} onChange={setSalary} unit="円"/>
+          <div style={{display:'flex',gap:4,marginTop:6}}>
+            {[[-1000000,'−100万'],[-100000,'−10万'],[100000,'+10万'],[1000000,'+100万']].map(([d,l])=>
+              <button key={l} onClick={()=>adjSalary(d)} style={{flex:1,padding:'7px 0',borderRadius:8,fontSize:11,fontWeight:700,cursor:'pointer',border:`1px solid ${d<0?'#fecaca':'#bbf7d0'}`,background:d<0?'#fef2f2':'#f0fdf4',color:d<0?'#dc2626':'#16a34a'}}>{l}</button>
+            )}
+          </div>
+          <div style={{display:'flex',gap:8,marginTop:10}}>
+            <div style={{flex:1}}><Field label="年齢" value={age} onChange={setAge} unit="歳"/></div>
+            <div style={{flex:1}}><Field label="勤続" value={years} onChange={setYears} unit="年"/></div>
+            <div style={{flex:1}}><Field label="世帯" value={members} onChange={setMembers} unit="人"/></div>
+          </div>
+          <Field label="住民票住所"><select value={pref} onChange={e=>setPref(e.target.value)} style={sInput}>{PREFS.map(p=><option key={p} value={p}>{p}</option>)}</select></Field>
+        </div>
+
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:12}}>🏠 既存借入（所有物件）</div>
+          {owned.map((o,i)=><div key={i} style={{borderBottom:'1px solid #f1f5f9',paddingBottom:8,marginBottom:8}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center'}}>
+              <span style={{fontSize:11,color:C.sub}}>物件 {i+1}</span>
+              {owned.length>1&&rmBtn(()=>setOwned(p=>p.filter((_,j)=>j!==i)))}
+            </div>
+            <div style={{display:'flex',gap:8}}>
+              <div style={{flex:2}}><Field label="月支払額" value={o.payment} onChange={v=>uOwn(i,'payment',v)} unit="円"/></div>
+              <div style={{flex:1}}><Field label="賃料" value={o.rent} onChange={v=>uOwn(i,'rent',v)} unit="円"/></div>
+              <div style={{flex:1}}><Field label="管積" value={o.mgmt} onChange={v=>uOwn(i,'mgmt',v)} unit="円"/></div>
+            </div>
+          </div>)}
+          {owned.length<4&&addBtn('＋ 物件追加',()=>setOwned(p=>[...p,{payment:0,rent:0,mgmt:0}]))}
+        </div>
+
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:12}}>💳 その他借入</div>
+          {others.map((o,i)=><div key={i} style={{display:'flex',gap:8,alignItems:'end'}}>
+            <div style={{flex:1}}><Field label={`借入${i+1} 月額`} value={o.payment} onChange={v=>uOth(i,'payment',v)} unit="円"/></div>
+            {others.length>1&&<div style={{marginBottom:12}}>{rmBtn(()=>setOthers(p=>p.filter((_,j)=>j!==i)))}</div>}
+          </div>)}
+          {others.length<4&&addBtn('＋ 借入追加',()=>setOthers(p=>[...p,{payment:0}]))}
+          <div style={{marginTop:10}}><Field label="家賃（自宅/社宅）" value={homeRent} onChange={setHomeRent} unit="円/月"/></div>
+        </div>
+
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:12}}>🏢 今回購入物件</div>
+          {props.map((p,i)=><div key={i} style={{borderBottom:'1px solid #f1f5f9',paddingBottom:10,marginBottom:10}}>
+            <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:4}}>
+              <span style={{fontSize:12,color:C.blue,fontWeight:700}}>物件 {i+1}</span>
+              {props.length>1&&rmBtn(()=>setProps(pr=>pr.filter((_,j)=>j!==i)))}
+            </div>
+            <Field label="購入価格" value={p.price} onChange={v=>uProp(i,'price',v)} unit="円"/>
+            <div style={{display:'flex',gap:8}}>
+              <div style={{flex:1}}><Field label="賃料" value={p.rent} onChange={v=>uProp(i,'rent',v)} unit="円/月"/></div>
+              <div style={{flex:1}}><Field label="管積" value={p.mgmt} onChange={v=>uProp(i,'mgmt',v)} unit="円/月"/></div>
+            </div>
+            <div style={{fontSize:11,color:C.sub,marginTop:2}}>月支払: ¥{fmt(calc.pc[i]?.mp)}</div>
+          </div>)}
+          {props.length<6&&addBtn('＋ 物件追加',()=>setProps(p=>[...p,{price:0,bonus:0,rent:0,mgmt:0}]))}
+          <div style={{marginTop:10}}><Field label="計算金利" value={calcRate} onChange={setCalcRate} unit="%"/></div>
+        </div>
+      </>}
+
+      {tab==="summary"&&<>
+        <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8,marginBottom:14}}>
+          {[[fmtP(calc.ratioNet),'返済比率（NET）',calc.ratioNet>0.5?C.red:C.green],
+            [fmtR(calc.yrMult)+'倍','年収倍率',C.text],
+            [fmtP(calc.ratio70),'賃料70%合算',C.text],
+            [fmtP(calc.ratio100),'賃料100%合算',C.text]
+          ].map(([v,l,c],i)=><div key={i} style={{background:'#fff',border:`1px solid ${C.border}`,borderRadius:10,padding:12,textAlign:'center',boxShadow:'0 1px 3px rgba(0,0,0,0.04)'}}>
+            <div style={{fontSize:18,fontWeight:700,color:c,fontFamily:'DM Mono'}}>{v}</div>
+            <div style={{fontSize:10,color:C.sub,marginTop:2}}>{l}</div>
+          </div>)}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:12}}>🏦 金融機関別 合否一覧</div>
+          <div style={{display:'grid',gridTemplateColumns:'1fr 1fr',gap:8}}>
+            {banks.map(b=><div key={b.key} onClick={()=>setTab(b.key)} style={{background:C.inputBg,border:`1px solid ${C.border}`,borderRadius:10,padding:'10px 12px',cursor:'pointer',display:'flex',alignItems:'center',justifyContent:'space-between'}}>
+              <span style={{fontSize:12,fontWeight:600,color:C.text}}>{b.label}</span>
+              <Badge pass={b.pass}/>
+            </div>)}
+          </div>
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>💰 控除内訳</div>
+          <RRow label="社会保険料（年額）" value={`¥${fmt(calc.si)}`}/>
+          <RRow label="所得税＋復興特別税" value={`¥${fmt(calc.tax.incomeTax)}`}/>
+          <RRow label="住民税" value={`¥${fmt(calc.tax.residentTax)}`}/>
+          <RRow label="税金合計" value={`¥${fmt(calc.tax.total)}`}/>
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>🔢 返済額内訳</div>
+          <RRow label="既存借入（年額）" value={`¥${fmt(calc.existTotalY)}`}/>
+          <RRow label="今回物件（年額）" value={`¥${fmt(calc.propYearlyTotal)}`}/>
+          <RRow label="合計年間返済額" value={`¥${fmt(calc.totalAP)}`}/>
+          <Divider/>
+          <RRow label="合計年間賃料収入" value={`¥${fmt(calc.totalRent)}`}/>
+          <RRow label="総借入額" value={`¥${fmt(calc.totalDebt)}`}/>
+        </div>
+      </>}
+
+      {tab==="rk"&&<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:16,fontWeight:700}}>楽天銀行 <Badge pass={calc.rk.pass}/></div>{backBtn}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>返済比率計算</div>
+          <RRow label="A（3.127%審査金利での年間返済）" value={`¥${fmt(calc.rk.repay)}`}/>
+          <RRow label="B（給与×70% − 200万）" value={`¥${fmt(calc.rk.b)}`}/>
+          <RRow label="C（B − 家賃）" value={`¥${fmt(calc.rk.c)}`}/>
+          <RRow label="D（C − その他借入）" value={`¥${fmt(calc.rk.d)}`}/>
+          <Divider/>
+          <RRow label="余裕額（D − A）" value={`¥${fmt(calc.rk.margin)}`}/>
+        </div>
+      </>}
+
+      {tab==="sbj"&&<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:16,fontWeight:700}}>SBJ銀行 <Badge pass={calc.sbj.pass}/></div>{backBtn}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>基準1：年収倍率</div>
+          <RRow label="借入総額" value={`¥${fmt(calc.totalDebt)}`}/>
+          <RRow label="年収" value={`¥${fmt(salary)}`}/>
+          <RRow label="年収倍率" value={`${fmtR(calc.sbj.ym)}倍`} sub={calc.sbj.mPass?"（10倍未満）":"（10倍以上）"}/>
+          <Badge pass={calc.sbj.mPass}/>
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>基準2：可処分所得</div>
+          <RRow label="A①（年収+賃料70%−社保−税金）" value={`¥${fmt(calc.sbj.a1)}`}/>
+          <RRow label="B（年間返済+自宅賃料）" value={`¥${fmt(calc.sbj.b)}`}/>
+          <RRow label="返済比率" value={fmtP(calc.sbj.ratio)} sub="（基準50%）"/>
+          <Divider/>
+          <RRow label="扶養控除額" value={`¥${fmt(960000*members)}`}/>
+          <RRow label="可処分所得" value={`¥${fmt(calc.sbj.disp)}`} sub="（100万以上必要）"/>
+          <Badge pass={calc.sbj.dPass}/>
+        </div>
+      </>}
+
+      {tab==="ion"&&<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:16,fontWeight:700}}>イオン銀行 <Badge pass={calc.ion.pass}/></div>{backBtn}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>基準1：返済比率＋年収倍率</div>
+          <RRow label="返済比率①（給与のみ）" value={fmtP(calc.ion.r1)} sub="基準50%"/>
+          <RRow label="返済比率②（賃料100%合算）" value={fmtP(calc.ion.r2)} sub="基準35%"/>
+          <RRow label="年収倍率" value={`${fmtR(calc.yrMult)}倍`} sub={`基準${calc.ion.bm}倍`}/>
+          <Badge pass={calc.ion.rPass&&calc.ion.mPass}/>
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>基準2：可処分所得</div>
+          <RRow label="A（年収−社保−税金）" value={`¥${fmt(salary-calc.si-calc.tax.total)}`}/>
+          <RRow label="可処分所得" value={`¥${fmt(calc.ion.disp)}`} sub="（10万以上必要）"/>
+          <Badge pass={calc.ion.dPass}/>
+        </div>
+      </>}
+
+      {tab==="sbi"&&<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:16,fontWeight:700}}>SBI <Badge pass={calc.sbi.pass}/></div>{backBtn}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>返済比率計算</div>
+          <RRow label="返済比率（賃料合算）" value={fmtP(calc.sbi.ratio)} sub={`基準${fmtP(calc.sbi.br)}`}/>
+          <RRow label="年収倍率" value={`${fmtR(calc.yrMult)}倍`} sub={`基準${calc.sbi.bm}倍`}/>
+          <RRow label="適用金利" value={fmtP(calc.sbi.rate)}/>
+          <Divider/>
+          <RRow label="年齢条件" value={`${age}歳`} sub="（25歳以上）"/>
+          <RRow label="勤続条件" value={`${years}年`} sub="（3年以上）"/>
+        </div>
+      </>}
+
+      {tab==="hig"&&<>
+        <div style={{display:'flex',justifyContent:'space-between',alignItems:'center',marginBottom:12}}>
+          <div style={{fontSize:16,fontWeight:700}}>東日本銀行 <Badge pass={calc.hig.pass}/></div>{backBtn}
+        </div>
+        <div style={sCard}>
+          <div style={{fontSize:13,fontWeight:700,color:C.blue,marginBottom:10}}>返済比率計算</div>
+          <RRow label="本件3.5%計算（年額）" value={`¥${fmt(calc.hig.pr)}`}/>
+          <RRow label="支出合計" value={`¥${fmt(calc.hig.tr)}`}/>
+          <Divider/>
+          <RRow label="年収×35%" value={`¥${fmt(calc.hig.s35)}`}/>
+          <RRow label="家賃収入−管積×70%" value={`¥${fmt(calc.hig.r70)}`}/>
+          <Divider/>
+          <RRow label="余裕額" value={`¥${fmt(calc.hig.margin)}`}/>
+        </div>
+      </>}
+
+      </div>
+    </div>
+  </div>;
+}
+
+ReactDOM.createRoot(document.getElementById('root')).render(<App/>);
+</script>
+</body>
+</html>
