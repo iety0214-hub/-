@@ -34,6 +34,34 @@ const SK_SETTINGS   = 'axia_buken_settings_v1';
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ══════════════════════════════════════
+// デバウンスユーティリティ
+// ══════════════════════════════════════
+function useDebounceCallback(fn, delay) {
+  const timerRef = useRef({});
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  return useCallback((id, ...args) => {
+    if (timerRef.current[id]) clearTimeout(timerRef.current[id]);
+    timerRef.current[id] = setTimeout(() => {
+      fnRef.current(id, ...args);
+      delete timerRef.current[id];
+    }, delay);
+  }, [delay]);
+}
+
+// 自分の更新を追跡するフラグ（Realtime受信時に無視するため）
+let _myUpdateIds = new Set();
+let _myUpdateTimer = null;
+function markMyUpdate(id) {
+  _myUpdateIds.add(String(id));
+  clearTimeout(_myUpdateTimer);
+  _myUpdateTimer = setTimeout(() => _myUpdateIds.clear(), 3000);
+}
+function isMyUpdate(id) {
+  return _myUpdateIds.has(String(id));
+}
+
+// ══════════════════════════════════════
 // デフォルト設定
 // ══════════════════════════════════════
 const DEFAULT_SETTINGS = {
@@ -42,7 +70,7 @@ const DEFAULT_SETTINGS = {
   fields: [
     { key: 'f_date',     label: '決済日',  icon: '📅', width: 52 },
     { key: 'f_buyer',    label: '買主様',  icon: '👤', width: 64 },
-    { key: 'f_kinshoki', label: '金消日',  icon: '⏰', width: 110, highlight: true },
+    { key: 'f_kinshoki', label: '金消日',  icon: '⏰', width: 110, highlight: true, comma: true },
   ],
   tabs: [
     { key: 'rakuten',       label: '🏦 楽天' },
@@ -86,6 +114,22 @@ const DEFAULT_SETTINGS = {
     ],
   },
 };
+
+// ══════════════════════════════════════
+// カンマフォーマット
+// ══════════════════════════════════════
+function formatComma(val) {
+  if (!val) return '';
+  const raw = String(val).replace(/[,，]/g, '');
+  // 数字のみならカンマ区切り
+  if (/^\d+$/.test(raw)) {
+    return Number(raw).toLocaleString();
+  }
+  return val;
+}
+function stripComma(val) {
+  return String(val || '').replace(/[,，]/g, '');
+}
 
 // ══════════════════════════════════════
 // ストレージ
@@ -140,6 +184,7 @@ async function updatePropInDB(id, patch) {
     if (patch.warnMemos  !== undefined) dbPatch.warn_memos  = patch.warnMemos;
     if (patch.checks     !== undefined) dbPatch.checks      = patch.checks;
     if (Object.keys(dbPatch).length === 0) return;
+    markMyUpdate(id);
     const { error } = await supabase.from(TABLE_NAME).update(dbPatch).eq('id', Number(id));
     if (error) throw error;
   } catch(e) { console.error('updateProp error:', e); }
@@ -223,6 +268,18 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
   const bg   = warn ? '#fff7ed' : done ? '#f0fdf4' : '#fef2f2';
   const bc   = warn ? '#f97316' : done ? '#10b981' : '#ef4444';
   const isAlert = item.label.startsWith('⚠️');
+
+  // ⚠️メモ用ローカルstate + デバウンス
+  const [localMemo, setLocalMemo] = useState(warnMemo || '');
+  const memoTimer = useRef(null);
+  useEffect(() => { setLocalMemo(warnMemo || ''); }, [warnMemo]);
+  const handleMemoChange = (e) => {
+    const v = e.target.value;
+    setLocalMemo(v);
+    clearTimeout(memoTimer.current);
+    memoTimer.current = setTimeout(() => onWarnMemo(propId, item.key, v), 600);
+  };
+
   return (
     <div>
       <div onClick={() => onToggle(propId, item.key, next)}
@@ -231,7 +288,7 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
         <div style={{flex:1,fontSize:13,fontWeight:isAlert?700:500,color:done?'#a0aec0':isAlert?'#92400e':'#1e2a4a',textDecoration:done?'line-through':'none'}}>{item.label}</div>
       </div>
       {warn && (
-        <textarea value={warnMemo||''} onChange={e=>onWarnMemo(propId,item.key,e.target.value)}
+        <textarea value={localMemo} onChange={handleMemoChange}
           onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
           style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:4,padding:'7px 10px',borderRadius:8,background:'#fff7ed',border:'1px solid #fdba74',fontSize:12,color:'#c2410c',resize:'none',outline:'none',minHeight:40,lineHeight:1.5}}/>
       )}
@@ -447,7 +504,6 @@ function SettingsScreen({ settings, onSave, onClose }) {
 
         <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,letterSpacing:'.05em'}}>⭐ 特別セクション</div>
         <div style={card}>
-
           <input value={d.sbjSection.label} onChange={e=>up({sbjSection:{...d.sbjSection,label:e.target.value}})} style={{...iSt,marginBottom:10,fontWeight:700}}/>
           {d.sbjSection.items.map((item,ii) => (
             <div key={item.key} style={{...row,paddingLeft:10}}>
@@ -468,6 +524,96 @@ function SettingsScreen({ settings, onSave, onClose }) {
 }
 
 // ══════════════════════════════════════
+// FieldInput（カードヘッダーのフィールド入力 - ローカルstate＋デバウンス）
+// ══════════════════════════════════════
+function FieldInput({ propId, field, value, onUpdate }) {
+  const isComma = field.comma || false;
+  const [localVal, setLocalVal] = useState(isComma ? formatComma(value) : (value || ''));
+  const timerRef = useRef(null);
+  const isFocused = useRef(false);
+
+  // 外部（Realtime等）からの値変更をローカルに反映（フォーカス中は無視）
+  useEffect(() => {
+    if (!isFocused.current) {
+      setLocalVal(isComma ? formatComma(value) : (value || ''));
+    }
+  }, [value, isComma]);
+
+  const handleChange = (e) => {
+    let v = e.target.value;
+    if (isComma) {
+      // 入力中は数字とカンマのみ許可、リアルタイムでカンマ付与
+      const raw = v.replace(/[,，]/g, '');
+      if (/^\d*$/.test(raw)) {
+        v = raw ? Number(raw).toLocaleString() : '';
+      }
+    }
+    setLocalVal(v);
+    clearTimeout(timerRef.current);
+    const saveVal = isComma ? stripComma(v) : v;
+    timerRef.current = setTimeout(() => {
+      onUpdate(propId, { fields: { [field.key]: saveVal } });
+    }, 600);
+  };
+
+  const handleFocus = () => { isFocused.current = true; };
+  const handleBlur = () => {
+    isFocused.current = false;
+    // blur時に即座にDB保存
+    clearTimeout(timerRef.current);
+    const saveVal = isComma ? stripComma(localVal) : localVal;
+    onUpdate(propId, { fields: { [field.key]: saveVal } });
+  };
+
+  return (
+    <input value={localVal}
+      onChange={handleChange}
+      onFocus={handleFocus}
+      onBlur={handleBlur}
+      onClick={e=>e.stopPropagation()}
+      placeholder={field.label}
+      inputMode={isComma ? 'numeric' : 'text'}
+      style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
+        color: field.highlight ? '#92400e' : '#1e2a4a',
+        width: field.width || 80, padding:0}}/>
+  );
+}
+
+// ══════════════════════════════════════
+// NameInput（物件名入力 - ローカルstate＋デバウンス）
+// ══════════════════════════════════════
+function NameInput({ propId, value, placeholder, onUpdate }) {
+  const [localVal, setLocalVal] = useState(value || '');
+  const timerRef = useRef(null);
+  const isFocused = useRef(false);
+
+  useEffect(() => {
+    if (!isFocused.current) setLocalVal(value || '');
+  }, [value]);
+
+  const handleChange = (e) => {
+    const v = e.target.value;
+    setLocalVal(v);
+    clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      onUpdate(propId, { name: v });
+    }, 600);
+  };
+  const handleFocus = () => { isFocused.current = true; };
+  const handleBlur = () => {
+    isFocused.current = false;
+    clearTimeout(timerRef.current);
+    onUpdate(propId, { name: localVal });
+  };
+
+  return (
+    <input value={localVal} onChange={handleChange} onFocus={handleFocus} onBlur={handleBlur}
+      placeholder={placeholder}
+      style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}/>
+  );
+}
+
+// ══════════════════════════════════════
 // Card
 // ══════════════════════════════════════
 function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
@@ -475,9 +621,17 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
   const { done, total, hasWarn } = calcProgress(prop.checks, settings, prop.sbjVisible);
   const bc = hasWarn ? '#f97316' : done===total ? '#10b981' : done===0 ? '#fca5a5' : '#c8d2f0';
 
-  const upd = (f, v) => onUpdate(prop.id, { [f]: v });
   const updCheck = (id, key, next) => onUpdate(id, { checks: { ...prop.checks, [key]: next } });
   const updMemo  = (id, key, val)  => onUpdate(id, { warnMemos: { ...(prop.warnMemos||{}), [key]: val } });
+
+  // フィールド更新（既存fieldsとマージ）
+  const updField = useCallback((id, patch) => {
+    if (patch.fields) {
+      onUpdate(id, { fields: { ...(prop.fields||{}), ...patch.fields } });
+    } else {
+      onUpdate(id, patch);
+    }
+  }, [onUpdate, prop.fields]);
 
   return (
     <div style={{background:'#fff',border:`1.5px solid ${bc}`,borderRadius:16,overflow:'hidden',marginBottom:10,boxShadow:'0 2px 12px rgba(200,169,74,.08)'}}>
@@ -506,11 +660,7 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
                   borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,
                   color: f.highlight ? '#92400e' : '#4a5680'}}>
                 {f.icon}
-                <input value={(prop.fields||{})[f.key]||''} onChange={e=>onUpdate(prop.id,{fields:{...(prop.fields||{}),[f.key]:e.target.value}})}
-                  onClick={e=>e.stopPropagation()} placeholder={f.label}
-                  style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
-                    color: f.highlight ? '#92400e' : '#1e2a4a',
-                    width: f.width || 80, padding:0}}/>
+                <FieldInput propId={prop.id} field={f} value={(prop.fields||{})[f.key]||''} onUpdate={updField}/>
               </span>
             ))}
           </div>
@@ -532,8 +682,7 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
 
           <div style={{padding:'0 0 10px',borderBottom:'1px solid #e8eeff'}}>
             <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',marginBottom:5}}>🏠 {settings.itemLabel}名</div>
-            <input value={prop.name||''} onChange={e=>upd('name',e.target.value)} placeholder={`${settings.itemLabel}名を入力`}
-              style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}/>
+            <NameInput propId={prop.id} value={prop.name} placeholder={`${settings.itemLabel}名を入力`} onUpdate={onUpdate}/>
           </div>
 
           {settings.sections.map((sec,si) => (
@@ -586,10 +735,13 @@ function App() {
     loadPropsFromDB().then(data => { setProps(data); setLoading(false); });
   }, []);
 
-  // リアルタイム同期
+  // リアルタイム同期（自分の更新は無視）
   useEffect(() => {
     const channel = supabase.channel('axia_buken_realtime')
-      .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, () => {
+      .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, (payload) => {
+        const changedId = payload.new?.id || payload.old?.id;
+        // 自分の更新なら全データ再取得しない
+        if (changedId && isMyUpdate(changedId)) return;
         loadPropsFromDB().then(data => setProps(data));
       }).subscribe();
     return () => supabase.removeChannel(channel);
@@ -605,10 +757,21 @@ function App() {
     setScreen('main');
   }, [tab]);
 
+  // DB書き込みをデバウンス（テキスト入力用: 600ms）
+  const debouncedDBUpdate = useDebounceCallback((id, patch) => {
+    updatePropInDB(id, patch).then(showSaved);
+  }, 600);
+
   const upd = useCallback((id, patch) => {
     setProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p));
-    updatePropInDB(id, patch).then(showSaved);
-  }, []);
+    // テキスト系（name, fields, warnMemos）はデバウンス、それ以外は即座
+    const isTextUpdate = patch.name !== undefined || patch.fields !== undefined || patch.warnMemos !== undefined;
+    if (isTextUpdate) {
+      debouncedDBUpdate(id, patch);
+    } else {
+      updatePropInDB(id, patch).then(showSaved);
+    }
+  }, [debouncedDBUpdate]);
 
   const del = useCallback(id => {
     setProps(ps => ps.filter(p => p.id !== id));
