@@ -184,31 +184,6 @@ function makeChecks(settings) {
 }
 
 // ══════════════════════════════════════
-// デバウンス用フック
-// ══════════════════════════════════════
-function useDebouncedCallback(fn, delay) {
-  const timerRef = useRef(null);
-  const fnRef = useRef(fn);
-  fnRef.current = fn;
-  const debouncedFn = useCallback((...args) => {
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      fnRef.current(...args);
-      timerRef.current = null;
-    }, delay);
-  }, [delay]);
-  // 即時実行が必要な場合のflush
-  debouncedFn.flush = () => {
-    if (timerRef.current) {
-      clearTimeout(timerRef.current);
-      timerRef.current = null;
-    }
-  };
-  debouncedFn.isPending = () => timerRef.current !== null;
-  return debouncedFn;
-}
-
-// ══════════════════════════════════════
 // Ring
 // ══════════════════════════════════════
 function Ring({ done, total }) {
@@ -247,7 +222,7 @@ function Modal({ onClose, title, sub, children }) {
 }
 
 // ══════════════════════════════════════
-// CheckItem
+// CheckItem（⚠️メモはローカルstateで管理）
 // ══════════════════════════════════════
 function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
   const done = value === true, warn = value === 'warn';
@@ -257,17 +232,20 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
   const bc   = warn ? '#f97316' : done ? '#10b981' : '#ef4444';
   const isAlert = item.label.startsWith('⚠️');
 
-  // ⚠️メモのローカルstate（入力中のRealtime競合を防ぐ）
+  // ⚠️メモのローカルstate
   const [localMemo, setLocalMemo] = useState(warnMemo || '');
-  const memoTimerRef = useRef(null);
+  const memoFocusedRef = useRef(false);
 
-  // 外部からwarnMemoが変わった時（Realtimeなど）、入力中でなければ同期
+  // 外部から変わった時、フォーカス中でなければ同期
+  const prevMemoRef = useRef(warnMemo);
   useEffect(() => {
-    if (!memoTimerRef.current) {
+    if (warnMemo !== prevMemoRef.current && !memoFocusedRef.current) {
       setLocalMemo(warnMemo || '');
     }
+    prevMemoRef.current = warnMemo;
   }, [warnMemo]);
 
+  const memoTimerRef = useRef(null);
   const handleMemoChange = (e) => {
     const val = e.target.value;
     setLocalMemo(val);
@@ -275,7 +253,16 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
     memoTimerRef.current = setTimeout(() => {
       onWarnMemo(propId, item.key, val);
       memoTimerRef.current = null;
-    }, 600);
+    }, 800);
+  };
+
+  const handleMemoBlur = () => {
+    memoFocusedRef.current = false;
+    if (memoTimerRef.current) {
+      clearTimeout(memoTimerRef.current);
+      memoTimerRef.current = null;
+    }
+    onWarnMemo(propId, item.key, localMemo);
   };
 
   return (
@@ -287,6 +274,8 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
       </div>
       {warn && (
         <textarea value={localMemo} onChange={handleMemoChange}
+          onFocus={() => { memoFocusedRef.current = true; }}
+          onBlur={handleMemoBlur}
           onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
           style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:4,padding:'7px 10px',borderRadius:8,background:'#fff7ed',border:'1px solid #fdba74',fontSize:12,color:'#c2410c',resize:'none',outline:'none',minHeight:40,lineHeight:1.5}}/>
       )}
@@ -530,66 +519,88 @@ function SettingsScreen({ settings, onSave, onClose }) {
 }
 
 // ══════════════════════════════════════
-// Card（★ローカルstate + デバウンスで入力バグ修正）
+// DebouncedInput（テキスト入力のための汎用コンポーネント）
+//
+// 方針: 入力はローカルstateで完結させ、
+//       blurした時だけ親にコミットする。
+//       これにより入力中のReactツリー再レンダリングや
+//       Realtime同期で値が上書きされることを完全に防ぐ。
+// ══════════════════════════════════════
+function DebouncedInput({ value, onCommit, style, placeholder, onClick, format }) {
+  // format="number" の場合：表示はカンマ付き、保存は生数値
+  const isNum = format === 'number';
+
+  const toDisplay = (v) => {
+    if (!isNum || !v) return v || '';
+    // 数字以外を除去してカンマ付きに変換
+    const num = String(v).replace(/[^\d]/g, '');
+    if (!num) return '';
+    return Number(num).toLocaleString();
+  };
+
+  const toRaw = (v) => {
+    if (!isNum) return v;
+    return String(v).replace(/[^\d]/g, '');
+  };
+
+  const [local, setLocal] = useState(toDisplay(value));
+  const focusedRef = useRef(false);
+
+  // 外部からvalueが変わった時、フォーカスが外れていれば同期
+  const prevValueRef = useRef(value);
+  useEffect(() => {
+    if (value !== prevValueRef.current && !focusedRef.current) {
+      setLocal(toDisplay(value));
+    }
+    prevValueRef.current = value;
+  }, [value]);
+
+  return (
+    <input
+      value={local}
+      onChange={e => {
+        if (isNum) {
+          const raw = e.target.value.replace(/[^\d]/g, '');
+          setLocal(raw ? Number(raw).toLocaleString() : '');
+        } else {
+          setLocal(e.target.value);
+        }
+      }}
+      onFocus={() => { focusedRef.current = true; }}
+      onBlur={() => {
+        focusedRef.current = false;
+        const commitVal = isNum ? toRaw(local) : local;
+        if (commitVal !== (value || '')) {
+          onCommit(commitVal);
+        }
+      }}
+      onClick={onClick}
+      placeholder={placeholder}
+      style={style}
+      inputMode={isNum ? 'numeric' : undefined}
+    />
+  );
+}
+
+// ══════════════════════════════════════
+// Card
 // ══════════════════════════════════════
 function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
   const [open, setOpen] = useState(false);
   const { done, total, hasWarn } = calcProgress(prop.checks, settings, prop.sbjVisible);
   const bc = hasWarn ? '#f97316' : done===total ? '#10b981' : done===0 ? '#fca5a5' : '#c8d2f0';
 
-  // ── ローカル入力state（Realtime競合防止） ──
-  const [localName, setLocalName] = useState(prop.name || '');
-  const [localFields, setLocalFields] = useState(prop.fields || {});
-  const editingRef = useRef(false); // 入力中フラグ
+  // 物件名コミット（blurで発火）
+  const commitName = useCallback((val) => {
+    onUpdate(prop.id, { name: val });
+  }, [prop.id, onUpdate]);
 
-  // 外部（Realtime）からpropが変わった時、入力中でなければ同期
-  useEffect(() => {
-    if (!editingRef.current) {
-      setLocalName(prop.name || '');
-      setLocalFields(prop.fields || {});
-    }
-  }, [prop.name, prop.fields]);
+  // フィールドコミット（blurで発火）
+  const commitField = useCallback((fieldKey, val) => {
+    onUpdate(prop.id, { fields: { ...(prop.fields || {}), [fieldKey]: val } });
+  }, [prop.id, prop.fields, onUpdate]);
 
-  // デバウンス付きDB更新（名前）
-  const debouncedNameUpdate = useDebouncedCallback((id, name) => {
-    onUpdate(id, { name });
-    editingRef.current = false;
-  }, 600);
-
-  // デバウンス付きDB更新（フィールド）
-  const debouncedFieldUpdate = useDebouncedCallback((id, fields) => {
-    onUpdate(id, { fields });
-    editingRef.current = false;
-  }, 600);
-
-  const handleNameChange = (e) => {
-    const val = e.target.value;
-    editingRef.current = true;
-    setLocalName(val);
-    debouncedNameUpdate(prop.id, val);
-  };
-
-  const handleFieldChange = (fieldKey, val) => {
-    editingRef.current = true;
-    const newFields = { ...(localFields || {}), [fieldKey]: val };
-    setLocalFields(newFields);
-    debouncedFieldUpdate(prop.id, newFields);
-  };
-
-  // blur時に即座に保存（デバウンス待ちがあればflushして即反映）
-  const handleNameBlur = () => {
-    debouncedNameUpdate.flush();
-    onUpdate(prop.id, { name: localName });
-    editingRef.current = false;
-  };
-
-  const handleFieldBlur = () => {
-    debouncedFieldUpdate.flush();
-    onUpdate(prop.id, { fields: localFields });
-    editingRef.current = false;
-  };
-
-  // チェック・メモは即時更新（テキスト入力ではないのでデバウンス不要）
+  // チェック・メモは即時更新
   const updCheck = (id, key, next) => onUpdate(id, { checks: { ...prop.checks, [key]: next } });
   const updMemo  = (id, key, val)  => onUpdate(id, { warnMemos: { ...(prop.warnMemos||{}), [key]: val } });
 
@@ -599,7 +610,7 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
         style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',background:'#fff'}}>
         <Ring done={done} total={total}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,color:'#1e2a4a'}}>{localName||`（${settings.itemLabel}名未設定）`}</div>
+          <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,color:'#1e2a4a'}}>{prop.name||`（${settings.itemLabel}名未設定）`}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5,alignItems:'center'}}>
             {settings.sbjSection.enabled && (
               <span onClick={e=>{e.stopPropagation();onUpdate(prop.id,{sbjVisible:!prop.sbjVisible});}}
@@ -620,12 +631,16 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
                   borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,
                   color: f.highlight ? '#92400e' : '#4a5680'}}>
                 {f.icon}
-                <input value={localFields[f.key]||''} onChange={e=>handleFieldChange(f.key, e.target.value)}
-                  onBlur={handleFieldBlur}
-                  onClick={e=>e.stopPropagation()} placeholder={f.label}
+                <DebouncedInput
+                  value={(prop.fields||{})[f.key]||''}
+                  onCommit={(val) => commitField(f.key, val)}
+                  onClick={e=>e.stopPropagation()}
+                  placeholder={f.label}
+                  format={f.highlight ? 'number' : undefined}
                   style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
                     color: f.highlight ? '#92400e' : '#1e2a4a',
-                    width: f.width || 80, padding:0}}/>
+                    width: f.width || 80, padding:0}}
+                />
               </span>
             ))}
           </div>
@@ -648,9 +663,12 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
 
           <div style={{padding:'0 0 10px',borderBottom:'1px solid #e8eeff'}}>
             <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',marginBottom:5}}>🏠 {settings.itemLabel}名</div>
-            <input value={localName} onChange={handleNameChange} onBlur={handleNameBlur}
+            <DebouncedInput
+              value={prop.name||''}
+              onCommit={commitName}
               placeholder={`${settings.itemLabel}名を入力`}
-              style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}/>
+              style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}
+            />
           </div>
 
           {settings.sections.map((sec,si) => (
@@ -705,12 +723,11 @@ function App() {
     loadPropsFromDB().then(data => { setProps(data); setLoading(false); });
   }, []);
 
-  // リアルタイム同期（入力中は再読み込みをスキップ）
+  // リアルタイム同期（直近3秒以内にローカル更新があったらスキップ）
   useEffect(() => {
     const channel = supabase.channel('axia_todo_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, () => {
-        // 直近でローカル更新があった場合はスキップ
-        if (Date.now() - editingLockRef.current < 2000) return;
+        if (Date.now() - editingLockRef.current < 3000) return;
         loadPropsFromDB().then(data => setProps(data));
       }).subscribe();
     return () => supabase.removeChannel(channel);
@@ -727,7 +744,7 @@ function App() {
   }, [tab]);
 
   const upd = useCallback((id, patch) => {
-    editingLockRef.current = Date.now(); // Realtime抑制タイムスタンプ
+    editingLockRef.current = Date.now();
     setProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p));
     updatePropInDB(id, patch).then(showSaved);
   }, []);
