@@ -24,12 +24,12 @@ input,textarea{font-family:'Noto Sans JP',sans-serif}
 const { useState, useCallback, useMemo, useRef, useEffect } = React;
 
 // ══════════════════════════════════════
-// ⚙️ Supabase設定 - ここを自分の値に書き換えてください
+// ⚙️ Supabase設定
 // ══════════════════════════════════════
-const SUPABASE_URL  = 'https://zrqdoorolwvjlwuatlkc.supabase.co';   // 例: https://xxxxxx.supabase.co
-const SUPABASE_KEY  = 'sb_publishable_qTfps32ER4iHTo_o3zkCEw_HlJdMq_c'; // 例: sb_publishable_xxxx
+const SUPABASE_URL  = 'https://zrqdoorolwvjlwuatlkc.supabase.co';
+const SUPABASE_KEY  = 'sb_publishable_qTfps32ER4iHTo_o3zkCEw_HlJdMq_c';
 const TABLE_NAME    = 'axia_todo_data';
-const SK_SETTINGS   = 'axia_todo_settings_v1'; // 設定はlocalStorageのまま
+const SK_SETTINGS   = 'axia_todo_settings_v1';
 
 const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
@@ -107,7 +107,6 @@ function loadSettings() {
 }
 function saveSettings(s) { localStorage.setItem(SK_SETTINGS, JSON.stringify(s)); }
 
-// Supabase: 全データ取得
 async function loadPropsFromDB() {
   try {
     const { data, error } = await supabase.from(TABLE_NAME).select('*').order('created_at', { ascending: true });
@@ -124,7 +123,6 @@ async function loadPropsFromDB() {
   } catch(e) { console.error('loadProps error:', e); return []; }
 }
 
-// Supabase: 1件追加
 async function addPropToDB(prop) {
   try {
     const { data, error } = await supabase.from(TABLE_NAME).insert([{
@@ -140,7 +138,6 @@ async function addPropToDB(prop) {
   } catch(e) { console.error('addProp error:', e); return prop.id; }
 }
 
-// Supabase: 1件更新
 async function updatePropInDB(id, patch) {
   try {
     const dbPatch = {};
@@ -156,7 +153,6 @@ async function updatePropInDB(id, patch) {
   } catch(e) { console.error('updateProp error:', e); }
 }
 
-// Supabase: 1件削除
 async function deletePropFromDB(id) {
   try {
     const { error } = await supabase.from(TABLE_NAME).delete().eq('id', Number(id));
@@ -185,6 +181,31 @@ function makeChecks(settings) {
   settings.sections.forEach(s => s.items.forEach(i => { obj[i.key] = false; }));
   settings.sbjSection.items.forEach(i => { obj[i.key] = false; });
   return obj;
+}
+
+// ══════════════════════════════════════
+// デバウンス用フック
+// ══════════════════════════════════════
+function useDebouncedCallback(fn, delay) {
+  const timerRef = useRef(null);
+  const fnRef = useRef(fn);
+  fnRef.current = fn;
+  const debouncedFn = useCallback((...args) => {
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      fnRef.current(...args);
+      timerRef.current = null;
+    }, delay);
+  }, [delay]);
+  // 即時実行が必要な場合のflush
+  debouncedFn.flush = () => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  };
+  debouncedFn.isPending = () => timerRef.current !== null;
+  return debouncedFn;
 }
 
 // ══════════════════════════════════════
@@ -235,6 +256,28 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
   const bg   = warn ? '#fff7ed' : done ? '#f0fdf4' : '#fef2f2';
   const bc   = warn ? '#f97316' : done ? '#10b981' : '#ef4444';
   const isAlert = item.label.startsWith('⚠️');
+
+  // ⚠️メモのローカルstate（入力中のRealtime競合を防ぐ）
+  const [localMemo, setLocalMemo] = useState(warnMemo || '');
+  const memoTimerRef = useRef(null);
+
+  // 外部からwarnMemoが変わった時（Realtimeなど）、入力中でなければ同期
+  useEffect(() => {
+    if (!memoTimerRef.current) {
+      setLocalMemo(warnMemo || '');
+    }
+  }, [warnMemo]);
+
+  const handleMemoChange = (e) => {
+    const val = e.target.value;
+    setLocalMemo(val);
+    if (memoTimerRef.current) clearTimeout(memoTimerRef.current);
+    memoTimerRef.current = setTimeout(() => {
+      onWarnMemo(propId, item.key, val);
+      memoTimerRef.current = null;
+    }, 600);
+  };
+
   return (
     <div>
       <div onClick={() => onToggle(propId, item.key, next)}
@@ -243,7 +286,7 @@ function CheckItem({ propId, item, value, warnMemo, onToggle, onWarnMemo }) {
         <div style={{flex:1,fontSize:13,fontWeight:isAlert?700:500,color:done?'#a0aec0':isAlert?'#92400e':'#1e2a4a',textDecoration:done?'line-through':'none'}}>{item.label}</div>
       </div>
       {warn && (
-        <textarea value={warnMemo||''} onChange={e=>onWarnMemo(propId,item.key,e.target.value)}
+        <textarea value={localMemo} onChange={handleMemoChange}
           onClick={e=>e.stopPropagation()} placeholder="⚠️ 要確認の内容を入力…"
           style={{display:'block',width:'calc(100% - 42px)',marginLeft:42,marginBottom:4,padding:'7px 10px',borderRadius:8,background:'#fff7ed',border:'1px solid #fdba74',fontSize:12,color:'#c2410c',resize:'none',outline:'none',minHeight:40,lineHeight:1.5}}/>
       )}
@@ -467,7 +510,6 @@ function SettingsScreen({ settings, onSave, onClose }) {
 
         <div style={{fontSize:12,fontWeight:700,color:'#c8a94a',marginBottom:10,letterSpacing:'.05em'}}>⭐ 特別セクション</div>
         <div style={card}>
-
           <input value={d.sbjSection.label} onChange={e=>up({sbjSection:{...d.sbjSection,label:e.target.value}})} style={{...iSt,marginBottom:10,fontWeight:700}}/>
           {d.sbjSection.items.map((item,ii) => (
             <div key={item.key} style={{...row,paddingLeft:10}}>
@@ -488,14 +530,66 @@ function SettingsScreen({ settings, onSave, onClose }) {
 }
 
 // ══════════════════════════════════════
-// Card
+// Card（★ローカルstate + デバウンスで入力バグ修正）
 // ══════════════════════════════════════
 function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
   const [open, setOpen] = useState(false);
   const { done, total, hasWarn } = calcProgress(prop.checks, settings, prop.sbjVisible);
   const bc = hasWarn ? '#f97316' : done===total ? '#10b981' : done===0 ? '#fca5a5' : '#c8d2f0';
 
-  const upd = (f, v) => onUpdate(prop.id, { [f]: v });
+  // ── ローカル入力state（Realtime競合防止） ──
+  const [localName, setLocalName] = useState(prop.name || '');
+  const [localFields, setLocalFields] = useState(prop.fields || {});
+  const editingRef = useRef(false); // 入力中フラグ
+
+  // 外部（Realtime）からpropが変わった時、入力中でなければ同期
+  useEffect(() => {
+    if (!editingRef.current) {
+      setLocalName(prop.name || '');
+      setLocalFields(prop.fields || {});
+    }
+  }, [prop.name, prop.fields]);
+
+  // デバウンス付きDB更新（名前）
+  const debouncedNameUpdate = useDebouncedCallback((id, name) => {
+    onUpdate(id, { name });
+    editingRef.current = false;
+  }, 600);
+
+  // デバウンス付きDB更新（フィールド）
+  const debouncedFieldUpdate = useDebouncedCallback((id, fields) => {
+    onUpdate(id, { fields });
+    editingRef.current = false;
+  }, 600);
+
+  const handleNameChange = (e) => {
+    const val = e.target.value;
+    editingRef.current = true;
+    setLocalName(val);
+    debouncedNameUpdate(prop.id, val);
+  };
+
+  const handleFieldChange = (fieldKey, val) => {
+    editingRef.current = true;
+    const newFields = { ...(localFields || {}), [fieldKey]: val };
+    setLocalFields(newFields);
+    debouncedFieldUpdate(prop.id, newFields);
+  };
+
+  // blur時に即座に保存（デバウンス待ちがあればflushして即反映）
+  const handleNameBlur = () => {
+    debouncedNameUpdate.flush();
+    onUpdate(prop.id, { name: localName });
+    editingRef.current = false;
+  };
+
+  const handleFieldBlur = () => {
+    debouncedFieldUpdate.flush();
+    onUpdate(prop.id, { fields: localFields });
+    editingRef.current = false;
+  };
+
+  // チェック・メモは即時更新（テキスト入力ではないのでデバウンス不要）
   const updCheck = (id, key, next) => onUpdate(id, { checks: { ...prop.checks, [key]: next } });
   const updMemo  = (id, key, val)  => onUpdate(id, { warnMemos: { ...(prop.warnMemos||{}), [key]: val } });
 
@@ -505,7 +599,7 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
         style={{display:'flex',alignItems:'center',gap:10,padding:'12px 14px',cursor:'pointer',background:'#fff'}}>
         <Ring done={done} total={total}/>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,color:'#1e2a4a'}}>{prop.name||`（${settings.itemLabel}名未設定）`}</div>
+          <div style={{fontSize:13,fontWeight:700,lineHeight:1.3,color:'#1e2a4a'}}>{localName||`（${settings.itemLabel}名未設定）`}</div>
           <div style={{display:'flex',flexWrap:'wrap',gap:4,marginTop:5,alignItems:'center'}}>
             {settings.sbjSection.enabled && (
               <span onClick={e=>{e.stopPropagation();onUpdate(prop.id,{sbjVisible:!prop.sbjVisible});}}
@@ -526,7 +620,8 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
                   borderRadius:8,padding:'2px 6px 2px 7px',fontSize:11,
                   color: f.highlight ? '#92400e' : '#4a5680'}}>
                 {f.icon}
-                <input value={(prop.fields||{})[f.key]||''} onChange={e=>onUpdate(prop.id,{fields:{...(prop.fields||{}),[f.key]:e.target.value}})}
+                <input value={localFields[f.key]||''} onChange={e=>handleFieldChange(f.key, e.target.value)}
+                  onBlur={handleFieldBlur}
                   onClick={e=>e.stopPropagation()} placeholder={f.label}
                   style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
                     color: f.highlight ? '#92400e' : '#1e2a4a',
@@ -540,9 +635,21 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
 
       {open && (
         <div style={{padding:'0 14px 6px',background:'#f7f9ff',borderTop:'1px solid #e8eeff'}}>
-          <div style={{padding:'12px 0 10px',borderBottom:'1px solid #e8eeff'}}>
+
+          {/* ★ アクションボタン → 物件名の上に配置 */}
+          <div style={{display:'flex',justifyContent:'flex-end',gap:8,padding:'10px 0 8px'}}>
+            <button onClick={e=>{e.stopPropagation();onMoveReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:12,fontWeight:700}}>📂 移動</button>
+            <button onClick={e=>{e.stopPropagation();onCopyReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fcd34d',background:'#fef9ec',color:'#92400e',fontSize:12,fontWeight:700}}>📋 コピー</button>
+            <button onClick={e=>{e.stopPropagation();onDeleteReq(prop.id);}}
+              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fca5a5',background:'#fef2f2',color:'#ef4444',fontSize:12,fontWeight:700}}>🗑 削除</button>
+          </div>
+
+          <div style={{padding:'0 0 10px',borderBottom:'1px solid #e8eeff'}}>
             <div style={{fontSize:10,fontWeight:700,color:'#c8a94a',marginBottom:5}}>🏠 {settings.itemLabel}名</div>
-            <input value={prop.name||''} onChange={e=>upd('name',e.target.value)} placeholder={`${settings.itemLabel}名を入力`}
+            <input value={localName} onChange={handleNameChange} onBlur={handleNameBlur}
+              placeholder={`${settings.itemLabel}名を入力`}
               style={{width:'100%',background:'#fff',border:'1px solid #c8d2f0',borderRadius:10,padding:'9px 12px',color:'#1e2a4a',fontSize:14,fontWeight:700,outline:'none'}}/>
           </div>
 
@@ -569,15 +676,6 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq }) {
               ))}
             </div>
           )}
-
-          <div style={{display:'flex',justifyContent:'flex-end',gap:8,padding:'10px 0 12px'}}>
-            <button onClick={e=>{e.stopPropagation();onMoveReq(prop.id);}}
-              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #dde3f5',background:'#f0f4ff',color:'#4a5680',fontSize:12,fontWeight:700}}>📂 移動</button>
-            <button onClick={e=>{e.stopPropagation();onCopyReq(prop.id);}}
-              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fcd34d',background:'#fef9ec',color:'#92400e',fontSize:12,fontWeight:700}}>📋 コピー</button>
-            <button onClick={e=>{e.stopPropagation();onDeleteReq(prop.id);}}
-              style={{padding:'7px 13px',borderRadius:9,border:'1px solid #fca5a5',background:'#fef2f2',color:'#ef4444',fontSize:12,fontWeight:700}}>🗑 削除</button>
-          </div>
         </div>
       )}
     </div>
@@ -600,24 +698,26 @@ function App() {
   const [copyId,   setCopyId]   = useState(null);
   const [moveId,   setMoveId]   = useState(null);
 
-  // 初回ロード
+  // 入力中フラグ（Realtime再読み込みを抑制）
+  const editingLockRef = useRef(0);
+
   useEffect(() => {
     loadPropsFromDB().then(data => { setProps(data); setLoading(false); });
   }, []);
 
-  // リアルタイム同期
+  // リアルタイム同期（入力中は再読み込みをスキップ）
   useEffect(() => {
     const channel = supabase.channel('axia_todo_realtime')
       .on('postgres_changes', { event: '*', schema: 'public', table: TABLE_NAME }, () => {
+        // 直近でローカル更新があった場合はスキップ
+        if (Date.now() - editingLockRef.current < 2000) return;
         loadPropsFromDB().then(data => setProps(data));
       }).subscribe();
     return () => supabase.removeChannel(channel);
   }, []);
 
-  // 設定保存（localStorageのまま）
   useEffect(() => { saveSettings(settings); }, [settings]);
 
-  // 保存済みインジケーター
   const showSaved = () => { setSaved(true); setTimeout(() => setSaved(false), 2000); };
 
   const handleSaveSettings = useCallback(draft => {
@@ -627,6 +727,7 @@ function App() {
   }, [tab]);
 
   const upd = useCallback((id, patch) => {
+    editingLockRef.current = Date.now(); // Realtime抑制タイムスタンプ
     setProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p));
     updatePropInDB(id, patch).then(showSaved);
   }, []);
@@ -695,7 +796,6 @@ function App() {
 
   return (
     <div style={{background:'#f0f4ff',minHeight:'100vh'}}>
-      {/* ヘッダー */}
       <div style={{background:'linear-gradient(135deg,#1e2a4a,#2d3e6e)',padding:'16px 16px 12px',position:'sticky',top:0,zIndex:100,boxShadow:'0 2px 16px rgba(30,42,74,.35)'}}>
         <div style={{display:'flex',alignItems:'center',justifyContent:'space-between',marginBottom:10}}>
           <div>
@@ -721,7 +821,6 @@ function App() {
         </div>
       </div>
 
-      {/* 統計バー */}
       <div style={{display:'flex',gap:8,padding:'10px 14px',background:'#fff',borderBottom:'1px solid #e8eeff',overflowX:'auto'}}>
         {[{n:stats.total,l:'全件',c:'#1e2a4a'},{n:stats.done,l:'完了',c:'#10b981'},{n:stats.warn,l:'要確認',c:'#f97316'},{n:stats.active,l:'対応中',c:'#ef4444'}].map(({n,l,c})=>(
           <div key={l} style={{flexShrink:0,display:'flex',alignItems:'center',gap:6,background:'#f7f9ff',border:`1.5px solid ${c}22`,borderRadius:10,padding:'6px 12px'}}>
@@ -731,7 +830,6 @@ function App() {
         ))}
       </div>
 
-      {/* フィルター */}
       <div style={{display:'flex',gap:6,padding:'8px 12px',background:'#fff',borderBottom:'1px solid #e8eeff',overflowX:'auto'}}>
         {[['all','すべて'],['undone','🔴 未対応あり'],['done','🟢 完了'],['warn','⚠️ 要確認']].map(([k,l])=>(
           <button key={k} onClick={() => setFilter(k)}
@@ -744,7 +842,6 @@ function App() {
         ))}
       </div>
 
-      {/* カードリスト */}
       <div style={{padding:'10px 12px 0'}}>
         {visible.length === 0
           ? <div style={{textAlign:'center',padding:'60px 20px',color:'#8a96b8',fontSize:14}}>
@@ -759,7 +856,6 @@ function App() {
         }
       </div>
 
-      {/* FAB */}
       <button onClick={() => setShowAdd(true)}
         style={{position:'fixed',bottom:24,right:20,width:56,height:56,borderRadius:'50%',background:'linear-gradient(135deg,#c8a94a,#e4c96a)',display:'flex',alignItems:'center',justifyContent:'center',fontSize:26,boxShadow:'0 4px 20px rgba(200,169,74,.5)',zIndex:200,border:'none',color:'#fff'}}>
         ＋
