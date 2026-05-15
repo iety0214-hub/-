@@ -559,11 +559,23 @@ function Card({ prop, settings, onUpdate, onDeleteReq, onCopyReq, onMoveReq, onS
                 ) : f.key === 'f_price' ? (
                   <span style={{display:'inline-flex',alignItems:'center',gap:0}}>
                     <input value={(prop.fields||{})[f.key] ? Number((prop.fields||{})[f.key]).toLocaleString() : ''}
-                      onChange={e=>{const v=e.target.value.replace(/[^\d]/g,'');onUpdate(prop.id,{fields:{...(prop.fields||{}),[f.key]:v}});}}
+                      onChange={e=>{
+                        const raw = e.target.value.replace(/[^\d]/g,'');
+                        const el = e.target;
+                        const pos = el.selectionStart;
+                        const prevLen = e.target.value.length;
+                        onUpdate(prop.id,{fields:{...(prop.fields||{}),[f.key]:raw}});
+                        requestAnimationFrame(()=>{
+                          const newVal = raw ? Number(raw).toLocaleString() : '';
+                          const diff = newVal.length - prevLen;
+                          const newPos = Math.max(0, pos + diff);
+                          el.setSelectionRange(newPos, newPos);
+                        });
+                      }}
                       onClick={e=>e.stopPropagation()} placeholder="0"
                       inputMode="numeric"
                       style={{background:'transparent',border:'none',outline:'none',fontSize:11,fontWeight:600,
-                        color:'#92400e', width:45, padding:0, textAlign:'right'}}/>
+                        color:'#92400e', width:50, padding:0, textAlign:'right'}}/>
                     {(prop.fields||{})[f.key] && <span style={{fontSize:10,fontWeight:600,color:'#92400e',marginLeft:1}}>万円</span>}
                   </span>
                 ) : (
@@ -664,36 +676,44 @@ function App() {
 
   useEffect(() => { saveSettings(settings); }, [settings]);
 
-  // ── Supabase: 保存（debounce） ──
+  // ── Supabase: 保存（差分のみ・debounce） ──
   const saveTimer = useRef(null);
-  const saveToSupabase = useCallback((newProps) => {
-    if (saveTimer.current) clearTimeout(saveTimer.current);
-    saveTimer.current = setTimeout(async () => {
-      setSyncing(true);
-      for (const p of newProps) {
-        const row = propToRow(p);
-        if (p.id.startsWith('_new')) {
-          // 新規INSERT
-          const { data, error } = await sb.from(TABLE).insert(row).select().single();
-          if (!error && data) {
-            setProps(ps => ps.map(x => x.id === p.id ? { ...x, id: String(data.id) } : x));
-          }
-        } else {
-          // UPDATE
-          await sb.from(TABLE).update(row).eq('id', parseInt(p.id));
+  const dirtyIds  = useRef(new Set());
+
+  const flushToSupabase = useCallback(async (currentProps) => {
+    const ids = [...dirtyIds.current];
+    dirtyIds.current.clear();
+    if (ids.length === 0) return;
+    setSyncing(true);
+    for (const id of ids) {
+      const p = currentProps.find(x => x.id === id);
+      if (!p) continue;
+      const row = propToRow(p);
+      if (p.id.startsWith('_new')) {
+        const { data, error } = await sb.from(TABLE).insert(row).select().single();
+        if (!error && data) {
+          setProps(ps => ps.map(x => x.id === p.id ? { ...x, id: String(data.id) } : x));
         }
+      } else {
+        await sb.from(TABLE).update(row).eq('id', parseInt(p.id));
       }
-      setSyncing(false);
-    }, 800);
+    }
+    setSyncing(false);
   }, []);
 
-  const updateProps = useCallback((updater) => {
+  const scheduleSave = useCallback((nextProps, changedId) => {
+    if (changedId) dirtyIds.current.add(changedId);
+    if (saveTimer.current) clearTimeout(saveTimer.current);
+    saveTimer.current = setTimeout(() => flushToSupabase(nextProps), 800);
+  }, [flushToSupabase]);
+
+  const updateProps = useCallback((updater, changedId) => {
     setProps(prev => {
       const next = typeof updater === 'function' ? updater(prev) : updater;
-      saveToSupabase(next);
+      scheduleSave(next, changedId);
       return next;
     });
-  }, [saveToSupabase]);
+  }, [scheduleSave]);
 
   const handleSaveSettings = useCallback(draft => {
     setSettings(draft);
@@ -701,7 +721,7 @@ function App() {
     setScreen('main');
   }, [tab]);
 
-  const upd = useCallback((id, patch) => updateProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p)), [updateProps]);
+  const upd = useCallback((id, patch) => updateProps(ps => ps.map(p => p.id===id ? {...p,...patch} : p), id), [updateProps]);
 
   const del = useCallback(async (id) => {
     updateProps(ps => ps.filter(p => p.id !== id));
@@ -711,37 +731,44 @@ function App() {
   }, [updateProps]);
 
   const addProp = useCallback(({ name, fields, tab: t }) => {
-    const newProp = { id:'_new'+Math.random().toString(36).slice(2,10), name, fields, tab:t, sbjVisible:false, warnMemos:{}, checks:makeChecks(settings), sortOrder: Date.now() };
-    updateProps(ps => [...ps, newProp]);
+    const newId = '_new'+Math.random().toString(36).slice(2,10);
+    const newProp = { id:newId, name, fields, tab:t, sbjVisible:false, warnMemos:{}, checks:makeChecks(settings), sortOrder: Date.now() };
+    updateProps(ps => [...ps, newProp], newId);
     setTab(t); setShowAdd(false);
   }, [settings, updateProps]);
 
   const doCopy = useCallback((toTab) => {
     const src = props.find(p => p.id===copyId); if (!src) return;
-    const newProp = { ...JSON.parse(JSON.stringify(src)), id:'_new'+Math.random().toString(36).slice(2,10), name:src.name+'（コピー）', tab:toTab, sortOrder: Date.now() };
-    updateProps(ps => [...ps, newProp]);
+    const newId = '_new'+Math.random().toString(36).slice(2,10);
+    const newProp = { ...JSON.parse(JSON.stringify(src)), id:newId, name:src.name+'（コピー）', tab:toTab, sortOrder: Date.now() };
+    updateProps(ps => [...ps, newProp], newId);
     setTab(toTab); setCopyId(null);
   }, [props, copyId, updateProps]);
 
   const doMove = useCallback(toTab => {
-    updateProps(ps => ps.map(p => p.id===moveId ? {...p, tab:toTab} : p));
+    updateProps(ps => ps.map(p => p.id===moveId ? {...p, tab:toTab} : p), moveId);
     setTab(toTab); setMoveId(null);
   }, [moveId, updateProps]);
 
   const swapProp = useCallback((id, dir) => {
-    updateProps(ps => {
-      const tabItems = ps.filter(p => p.tab === tab);
-      const otherItems = ps.filter(p => p.tab !== tab);
+    setProps(prev => {
+      const tabItems = prev.filter(p => p.tab === tab);
+      const otherItems = prev.filter(p => p.tab !== tab);
       const idx = tabItems.findIndex(p => p.id === id);
-      if (idx < 0) return ps;
+      if (idx < 0) return prev;
       const swapIdx = idx + dir;
-      if (swapIdx < 0 || swapIdx >= tabItems.length) return ps;
+      if (swapIdx < 0 || swapIdx >= tabItems.length) return prev;
+      const swapId = tabItems[swapIdx].id;
       [tabItems[idx], tabItems[swapIdx]] = [tabItems[swapIdx], tabItems[idx]];
-      // sortOrder更新
       tabItems.forEach((p, i) => { p.sortOrder = i; });
-      return [...otherItems, ...tabItems];
+      const next = [...otherItems, ...tabItems];
+      dirtyIds.current.add(id);
+      dirtyIds.current.add(swapId);
+      if (saveTimer.current) clearTimeout(saveTimer.current);
+      saveTimer.current = setTimeout(() => flushToSupabase(next), 800);
+      return next;
     });
-  }, [tab, updateProps]);
+  }, [tab, flushToSupabase]);
 
   // ── サイトソート ──
   const parseSiteOrder = (site) => {
