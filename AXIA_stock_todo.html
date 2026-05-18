@@ -30,6 +30,7 @@ const SUPABASE_URL = 'https://zrqdoorolwvjlwuatlkc.supabase.co';
 const SUPABASE_KEY = 'sb_publishable_qTfps32ER4iHTo_o3zkCEw_HlJdMq_c';
 const sb = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const TABLE = 'axia_stock_todo';
+const GAS_URL = 'https://script.google.com/macros/s/AKfycbzSO6xJvkCaUNE0GUHPGhyaUAndA9JifdnoWCpiGAsbl4-lQYgonzJOubPdDqC5UHi5/exec';
 
 const SK_SETTINGS = 'axia_stock_settings_sb1';
 
@@ -654,6 +655,7 @@ function App() {
   const [props,    setProps]    = useState([]);
   const [loading,  setLoading]  = useState(true);
   const [syncing,  setSyncing]  = useState(false);
+  const [syncMsg,  setSyncMsg]  = useState('');
   const [tab,      setTab]      = useState(() => loadSettings().tabs[0]?.key || '');
   const [filter,   setFilter]   = useState('all');
   const [sortMode, setSortMode] = useState('none');
@@ -770,6 +772,105 @@ function App() {
     });
   }, [tab, flushToSupabase]);
 
+  // ── スプシ同期 ──
+  const syncFromSheet = useCallback(async () => {
+    if (syncing) return;
+    setSyncing(true);
+    setSyncMsg('📥 スプシからデータ取得中...');
+    try {
+      const res = await fetch(GAS_URL);
+      const json = await res.json();
+      if (!json.success) { setSyncMsg('❌ エラー: ' + (json.error||'不明')); setSyncing(false); return; }
+
+      const sheetProps = json.props;
+      setSyncMsg(`📊 ${sheetProps.length}件取得。Supabaseに反映中...`);
+
+      // 既存データを取得
+      const { data: existing } = await sb.from(TABLE).select('id, name, fields').order('id');
+      const existMap = {};
+      (existing||[]).forEach(r => { existMap[r.name] = r; });
+
+      let updated = 0, inserted = 0, unchanged = 0;
+
+      for (let i = 0; i < sheetProps.length; i++) {
+        const sp = sheetProps[i];
+        const ex = existMap[sp.name];
+
+        if (ex) {
+          // 既存 → フィールドを更新（チェック状態は保持）
+          const oldFields = ex.fields || {};
+          const newFields = {
+            ...oldFields,
+            f_customer: sp.f_customer,
+            f_price: sp.f_price,
+            f_bank: sp.f_bank,
+            f_age: sp.f_age,
+            f_site: sp.f_site,
+            _sortOrder: oldFields._sortOrder ?? i,
+          };
+          // フィールドに変更があるか確認
+          const changed = ['f_customer','f_price','f_bank','f_age','f_site'].some(
+            k => (oldFields[k]||'') !== (newFields[k]||'')
+          ) || (ex.fields?.tab !== sp.tab && false); // tabの変更チェック
+
+          if (changed || ex.tab !== sp.tab) {
+            await sb.from(TABLE).update({ tab: sp.tab, fields: newFields }).eq('id', ex.id);
+            updated++;
+          } else {
+            unchanged++;
+          }
+          delete existMap[sp.name];
+        } else {
+          // 新規 → INSERT
+          const checks = makeChecks(settings);
+          // ステータスに応じてチェックを自動設定
+          if (sp.status === '引渡し済み') {
+            Object.keys(checks).forEach(k => { checks[k] = true; });
+          } else if (['契約済み'].includes(sp.status)) {
+            ['sa_site','sa_assign','sa_material','sa_price','sa_photo',
+             'ap_form','ap_id','ap_income','ap_submit','ap_result','ap_notice',
+             'ct_draft','ct_important','ct_date','ct_explain','ct_sign','ct_deposit','ct_special'
+            ].forEach(k => { if (checks[k] !== undefined) checks[k] = true; });
+          } else if (['承認済み'].includes(sp.status)) {
+            ['sa_site','sa_assign','sa_material','sa_price','sa_photo',
+             'ap_form','ap_id','ap_income','ap_submit','ap_result','ap_notice'
+            ].forEach(k => { if (checks[k] !== undefined) checks[k] = true; });
+          } else if (['申込中'].includes(sp.status)) {
+            ['sa_site','sa_assign','sa_material','sa_price','sa_photo'
+            ].forEach(k => { if (checks[k] !== undefined) checks[k] = true; });
+          }
+
+          const warnMemos = {};
+          if (sp.memo && ['承認済み','契約済み'].includes(sp.status)) {
+            checks['ct_special'] = 'warn';
+            warnMemos['ct_special'] = sp.memo;
+          }
+
+          await sb.from(TABLE).insert({
+            name: sp.name,
+            tab: sp.tab,
+            fields: {
+              f_customer: sp.f_customer, f_price: sp.f_price, f_bank: sp.f_bank,
+              f_age: sp.f_age, f_site: sp.f_site,
+              _checks: checks, _warnMemos: warnMemos, _sbjVisible: false, _sortOrder: i,
+            }
+          });
+          inserted++;
+        }
+      }
+
+      // Supabaseから再読み込み
+      const { data: refreshed } = await sb.from(TABLE).select('*').order('id');
+      setProps((refreshed||[]).map(rowToProp).sort((a,b) => (a.sortOrder||0) - (b.sortOrder||0)));
+
+      setSyncMsg(`✅ 完了！ 更新${updated}件 / 新規${inserted}件 / 変更なし${unchanged}件`);
+      setTimeout(() => setSyncMsg(''), 5000);
+    } catch (err) {
+      setSyncMsg('❌ 同期エラー: ' + err.message);
+    }
+    setSyncing(false);
+  }, [syncing, settings]);
+
   // ── サイトソート ──
   const parseSiteOrder = (site) => {
     if (!site || site === '未定') return 9999;
@@ -849,6 +950,10 @@ function App() {
             <div style={{fontSize:17,fontWeight:900,color:'#fff'}}>{settings.appTitle}</div>
           </div>
           <div style={{display:'flex',alignItems:'center',gap:8}}>
+            <button onClick={syncFromSheet} disabled={syncing}
+              style={{background:syncing?'rgba(245,158,11,.3)':'rgba(16,185,129,.25)',border:`1px solid ${syncing?'rgba(245,158,11,.5)':'rgba(16,185,129,.5)'}`,borderRadius:9,padding:'5px 10px',color:syncing?'#fbbf24':'#6ee7b7',fontSize:11,fontWeight:700,cursor:syncing?'default':'pointer'}}>
+              {syncing ? '⏳ 同期中...' : '📥 スプシ同期'}
+            </button>
             <div style={{background:syncing?'rgba(245,158,11,.3)':'rgba(79,110,247,.3)',border:`1px solid ${syncing?'rgba(245,158,11,.5)':'rgba(79,110,247,.5)'}`,color:syncing?'#fbbf24':'#a3bffa',fontSize:10,padding:'3px 8px',borderRadius:20,fontWeight:700,transition:'all .4s'}}>
               {syncing ? '⏳ 同期中...' : '☁️ 同期済み'}
             </div>
@@ -877,6 +982,16 @@ function App() {
           ))}
         </div>
       </div>
+
+      {/* 同期メッセージ */}
+      {syncMsg && (
+        <div style={{padding:'8px 14px',background:syncMsg.startsWith('❌')?'#fef2f2':syncMsg.startsWith('✅')?'#f0fdf4':'#eff6ff',
+          borderBottom:'1px solid #e8eeff',fontSize:12,fontWeight:700,
+          color:syncMsg.startsWith('❌')?'#ef4444':syncMsg.startsWith('✅')?'#10b981':'#3b82f6',
+          display:'flex',alignItems:'center',gap:6}}>
+          {syncMsg}
+        </div>
+      )}
 
       {/* 統計バー */}
       <div style={{display:'flex',gap:8,padding:'10px 14px',background:'#fff',borderBottom:'1px solid #e8eeff',overflowX:'auto'}}>
