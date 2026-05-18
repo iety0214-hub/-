@@ -809,11 +809,12 @@ function App() {
             _sortOrder: oldFields._sortOrder ?? i,
           };
           // フィールドに変更があるか確認
-          const changed = ['f_customer','f_price','f_bank','f_age','f_site'].some(
+          const fieldsChanged = ['f_customer','f_price','f_bank','f_age','f_site'].some(
             k => (oldFields[k]||'') !== (newFields[k]||'')
-          ) || (ex.fields?.tab !== sp.tab && false); // tabの変更チェック
+          );
+          const tabChanged = (ex.tab || '') !== sp.tab;
 
-          if (changed || ex.tab !== sp.tab) {
+          if (fieldsChanged || tabChanged) {
             await sb.from(TABLE).update({ tab: sp.tab, fields: newFields }).eq('id', ex.id);
             updated++;
           } else {
